@@ -1,0 +1,11 @@
+name = "obsidian-sync-workers"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "obsidian-sync"
+database_id = "preview_only"
+
+[vars]
+# Environment variables (set API_KEY in production)
