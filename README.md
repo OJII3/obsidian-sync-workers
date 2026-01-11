@@ -34,8 +34,7 @@ D1 Database (SQLite)
 
 ### 前提条件
 
-- Node.js 24 (LTS) 以上
-- npm または pnpm
+- Bun (最新版推奨)
 - Cloudflareアカウント（サーバーデプロイ用）
 - Wrangler CLI
 
@@ -45,11 +44,8 @@ D1 Database (SQLite)
 git clone https://github.com/OJII3/obsidian-sync-workers.git
 cd obsidian-sync-workers
 
-# npm を使用する場合
-npm install
-
-# pnpm を使用する場合
-pnpm install
+# Bunを使用してインストール
+bun install
 ```
 
 ## サーバーのセットアップ
@@ -70,20 +66,20 @@ wrangler d1 create obsidian-sync
 
 ```bash
 # 本番環境
-npm run db:init
+bun run db:init
 
 # ローカル開発環境
-npm run db:local
+bun run db:local
 ```
 
 ### 3. ローカル開発サーバーの起動
 
 ```bash
 # packages/server ディレクトリから
-npm run dev
+bun run dev
 
 # またはルートディレクトリから
-npm run dev:server
+bun run dev:server
 ```
 
 サーバーは `http://localhost:8787` で起動します。
@@ -94,10 +90,10 @@ npm run dev:server
 
 ```bash
 # packages/server ディレクトリから
-npm run deploy
+bun run deploy
 
 # またはルートディレクトリから
-npm run build:server
+bun run build:server
 ```
 
 #### 自動デプロイ
@@ -112,10 +108,10 @@ mainブランチにpushすると、GitHub Actionsが自動的にCloudflare Worke
 
 ```bash
 # packages/plugin ディレクトリから
-npm run dev
+bun run dev
 
 # またはルートディレクトリから
-npm run dev:plugin
+bun run dev:plugin
 ```
 
 開発モードでは、ファイルの変更を監視して自動的に再ビルドします。
@@ -124,10 +120,10 @@ npm run dev:plugin
 
 ```bash
 # packages/plugin ディレクトリから
-npm run build
+bun run build
 
 # またはルートディレクトリから
-npm run build:plugin
+bun run build:plugin
 ```
 
 ### Obsidianへのインストール
@@ -313,10 +309,10 @@ obsidian-sync-workers/
 
 ```bash
 # ターミナル1: サーバー
-npm run dev:server
+bun run dev:server
 
 # ターミナル2: プラグイン
-npm run dev:plugin
+bun run dev:plugin
 ```
 
 ### テスト
@@ -324,7 +320,7 @@ npm run dev:plugin
 ```bash
 # サーバーのテスト
 cd packages/server
-npm run dev
+bun run dev
 
 # 別のターミナルで
 curl http://localhost:8787/

@@ -29,14 +29,14 @@ D1 Database (SQLite)
 
 ### 前提条件
 
-- Node.js 24 (LTS) 以上
+- Bun (最新版推奨)
 - Cloudflareアカウント
 - Wrangler CLI
 
 ### 1. 依存関係のインストール
 
 ```bash
-npm install
+bun install
 ```
 
 ### 2. D1データベースの作成
@@ -53,16 +53,16 @@ wrangler d1 create obsidian-sync
 
 ```bash
 # 本番環境
-npm run db:init
+bun run db:init
 
 # ローカル開発環境
-npm run db:local
+bun run db:local
 ```
 
 ### 4. ローカル開発サーバーの起動
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 サーバーは `http://localhost:8787` で起動します。
@@ -72,7 +72,7 @@ npm run dev
 #### 手動デプロイ
 
 ```bash
-npm run deploy
+bun run deploy
 ```
 
 #### 自動デプロイ（GitHub Actions）
@@ -334,7 +334,7 @@ obsidian-sync-workers/
 
 ```bash
 # サーバー起動
-npm run dev
+bun run dev
 
 # ドキュメント作成
 curl -X PUT http://localhost:8787/api/docs/test1 \

@@ -8,6 +8,9 @@ dist/
 .env.local
 package-lock.json
 
+# Claude settings
+.claude/
+
 # Plugin build output
 packages/plugin/main.js
 packages/plugin/main.js.map
