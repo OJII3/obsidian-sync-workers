@@ -1,0 +1,12 @@
+# build output
+main.js
+main.js.map
+*.js.map
+
+# npm
+node_modules
+package-lock.json
+
+# IDE
+.idea
+.vscode

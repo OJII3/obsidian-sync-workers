@@ -1,10 +1,13 @@
 # Obsidian Sync Workers
 
-シンプルなObsidian同期サーバー実装 - Cloudflare WorkersとD1を使用
+シンプルなObsidian同期システム - Cloudflare WorkersとD1を使用したサーバーと、Obsidianプラグインのモノレポ
 
 ## 概要
 
-このプロジェクトは、[obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync)のシンプル版として、Cloudflare WorkersとD1データベースを使って実装されたObsidian同期サーバーです。
+このプロジェクトは、[obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync)のシンプル版として、2つのパッケージで構成されています：
+
+1. **Server (`packages/server`)** - Cloudflare WorkersとD1データベースを使った同期サーバー
+2. **Plugin (`packages/plugin`)** - Obsidianプラグイン（クライアント側）
 
 ### 主な機能
 
@@ -14,13 +17,15 @@
 - ✅ 論理削除
 - ✅ 一括ドキュメント操作
 - ✅ マルチVault対応
+- ✅ 自動同期
+- ✅ 手動同期トリガー
 
 ## アーキテクチャ
 
 ```
-Obsidian Client
+Obsidian Plugin (Client)
     ↓
-Cloudflare Workers (Hono Framework)
+Cloudflare Workers (Elysia Framework)
     ↓
 D1 Database (SQLite)
 ```
@@ -30,18 +35,30 @@ D1 Database (SQLite)
 ### 前提条件
 
 - Node.js 18以上
-- Cloudflareアカウント
+- npm または pnpm
+- Cloudflareアカウント（サーバーデプロイ用）
 - Wrangler CLI
 
-### 1. 依存関係のインストール
+### 1. リポジトリのクローンと依存関係のインストール
 
 ```bash
+git clone https://github.com/OJII3/obsidian-sync-workers.git
+cd obsidian-sync-workers
+
+# npm を使用する場合
 npm install
+
+# pnpm を使用する場合
+pnpm install
 ```
 
-### 2. D1データベースの作成
+## サーバーのセットアップ
+
+### 1. D1データベースの作成
 
 ```bash
+cd packages/server
+
 # D1データベースを作成
 wrangler d1 create obsidian-sync
 
@@ -49,7 +66,7 @@ wrangler d1 create obsidian-sync
 # [[d1_databases]]セクションのdatabase_idを更新してください
 ```
 
-### 3. データベーススキーマの適用
+### 2. データベーススキーマの適用
 
 ```bash
 # 本番環境
@@ -59,133 +76,113 @@ npm run db:init
 npm run db:local
 ```
 
-### 4. ローカル開発サーバーの起動
+### 3. ローカル開発サーバーの起動
 
 ```bash
+# packages/server ディレクトリから
 npm run dev
+
+# またはルートディレクトリから
+npm run dev:server
 ```
 
 サーバーは `http://localhost:8787` で起動します。
 
-### 5. デプロイ
+### 4. デプロイ
 
 ```bash
+# packages/server ディレクトリから
 npm run deploy
+
+# またはルートディレクトリから
+npm run build:server
 ```
+
+## プラグインのセットアップ
+
+### 開発モード
+
+```bash
+# packages/plugin ディレクトリから
+npm run dev
+
+# またはルートディレクトリから
+npm run dev:plugin
+```
+
+開発モードでは、ファイルの変更を監視して自動的に再ビルドします。
+
+### ビルド
+
+```bash
+# packages/plugin ディレクトリから
+npm run build
+
+# またはルートディレクトリから
+npm run build:plugin
+```
+
+### Obsidianへのインストール
+
+1. `packages/plugin` ディレクトリ全体を Obsidianのプラグインフォルダにコピー：
+   ```bash
+   # Linux/Mac
+   cp -r packages/plugin /path/to/your/vault/.obsidian/plugins/obsidian-sync-workers
+
+   # Windows
+   xcopy packages\plugin C:\path\to\your\vault\.obsidian\plugins\obsidian-sync-workers /E /I
+   ```
+
+2. Obsidianを再起動
+
+3. Settings → Community plugins → Obsidian Sync Workers を有効化
+
+### プラグインの設定
+
+1. Settings → Obsidian Sync Workers を開く
+2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
+3. **Vault ID** を設定（デフォルト：`default`）
+4. **Auto sync** を有効化（オプション）
+5. **Sync interval** を設定（分単位）
+6. **Test** ボタンでサーバー接続をテスト
+7. **Sync now** で手動同期を実行
+
+## 使い方
+
+### 手動同期
+
+- リボンアイコンの同期ボタンをクリック
+- コマンドパレット（Ctrl/Cmd+P）から "Sync now" を実行
+
+### 自動同期
+
+設定で **Auto sync** を有効化すると、指定した間隔で自動的に同期されます。
+
+### コマンド
+
+- `Sync now` - 即座に同期を実行
+- `Toggle auto sync` - 自動同期のオン/オフを切り替え
 
 ## API リファレンス
 
-### ドキュメント操作
+### サーバーAPI
 
-#### GET /api/docs/:id
+詳細は `packages/server/README.md` を参照してください。
 
-ドキュメントを取得
+#### ドキュメント操作
 
-```bash
-curl http://localhost:8787/api/docs/my-note?vault_id=default
-```
+- `GET /api/docs/:id` - ドキュメントを取得
+- `PUT /api/docs/:id` - ドキュメントを作成または更新
+- `DELETE /api/docs/:id` - ドキュメントを削除
+- `POST /api/docs/bulk_docs` - 一括ドキュメント操作
 
-レスポンス:
-```json
-{
-  "_id": "my-note",
-  "_rev": "1-abc123",
-  "content": "# My Note\nContent here",
-  "_deleted": false
-}
-```
+#### 変更フィード
 
-#### PUT /api/docs/:id
+- `GET /api/changes` - 変更リストを取得
 
-ドキュメントを作成または更新
+#### デバッグ
 
-```bash
-curl -X PUT http://localhost:8787/api/docs/my-note \
-  -H "Content-Type: application/json" \
-  -d '{
-    "_id": "my-note",
-    "content": "# Updated Note\nNew content",
-    "_rev": "1-abc123"
-  }'
-```
-
-レスポンス:
-```json
-{
-  "ok": true,
-  "id": "my-note",
-  "rev": "2-def456"
-}
-```
-
-#### DELETE /api/docs/:id
-
-ドキュメントを削除（論理削除）
-
-```bash
-curl -X DELETE "http://localhost:8787/api/docs/my-note?rev=2-def456&vault_id=default"
-```
-
-#### POST /api/docs/bulk_docs
-
-一括ドキュメント操作
-
-```bash
-curl -X POST http://localhost:8787/api/docs/bulk_docs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "docs": [
-      {
-        "_id": "note1",
-        "content": "Content 1"
-      },
-      {
-        "_id": "note2",
-        "content": "Content 2"
-      }
-    ]
-  }'
-```
-
-### 変更フィード
-
-#### GET /api/changes
-
-変更リストを取得（同期用）
-
-```bash
-curl "http://localhost:8787/api/changes?since=0&limit=100&vault_id=default"
-```
-
-レスポンス:
-```json
-{
-  "results": [
-    {
-      "seq": 1,
-      "id": "note1",
-      "changes": [{"rev": "1-abc123"}]
-    },
-    {
-      "seq": 2,
-      "id": "note2",
-      "changes": [{"rev": "1-def456"}],
-      "deleted": true
-    }
-  ],
-  "last_seq": 2
-}
-```
-
-### デバッグ
-
-#### GET /api/debug/docs
-
-すべてのドキュメントを取得（デバッグ用）
-
-```bash
-curl "http://localhost:8787/api/debug/docs?vault_id=default&limit=10"
-```
+- `GET /api/debug/docs` - すべてのドキュメントを取得
 
 ## データベーススキーマ
 
@@ -235,32 +232,62 @@ curl "http://localhost:8787/api/debug/docs?vault_id=default&limit=10"
 
 ドキュメント更新時に、提供された `_rev` が現在のリビジョンと一致しない場合、409 Conflictエラーを返します。
 
+## プロジェクト構成
+
+```
+obsidian-sync-workers/
+├── packages/
+│   ├── server/              # Cloudflare Workersサーバー
+│   │   ├── src/
+│   │   │   ├── index.ts     # Workerエントリーポイント
+│   │   │   ├── types.ts     # TypeScript型定義
+│   │   │   ├── db/
+│   │   │   │   ├── schema.sql   # D1スキーマ
+│   │   │   │   └── queries.ts   # データベースクエリ
+│   │   │   └── utils/
+│   │   │       ├── revision.ts  # リビジョン管理
+│   │   │       └── auth.ts      # 認証ヘルパー
+│   │   ├── wrangler.toml    # Cloudflare設定
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── plugin/              # Obsidianプラグイン
+│       ├── main.ts          # プラグインエントリーポイント
+│       ├── sync-service.ts  # 同期サービス
+│       ├── settings.ts      # 設定タブ
+│       ├── types.ts         # TypeScript型定義
+│       ├── manifest.json    # プラグインマニフェスト
+│       ├── package.json
+│       └── tsconfig.json
+├── package.json             # ルートpackage.json
+├── pnpm-workspace.yaml      # pnpmワークスペース設定
+└── README.md
+```
+
+## トラブルシューティング
+
+### サーバーに接続できない
+
+1. サーバーが起動しているか確認
+2. Server URLが正しいか確認
+3. CORSエラーの場合、サーバー側のCORS設定を確認
+
+### 同期が動作しない
+
+1. Test connection で接続をテスト
+2. ブラウザのコンソールログを確認
+3. サーバーのログを確認
+
+### プラグインが表示されない
+
+1. プラグインフォルダに正しくコピーされているか確認
+2. `main.js` がビルドされているか確認
+3. Obsidianを再起動
+
 ## セキュリティ
 
 ### API認証（オプション）
 
-環境変数 `API_KEY` を設定することで、API認証を有効化できます：
-
-1. `wrangler.toml` の `[vars]` セクションに設定、または
-2. Cloudflareダッシュボードで環境変数を設定
-
-```toml
-[vars]
-API_KEY = "your-secret-api-key"
-```
-
-認証ヘッダー:
-```bash
-curl -H "Authorization: Bearer your-secret-api-key" \
-  http://localhost:8787/api/docs/my-note
-```
-
-または、クエリパラメータ:
-```bash
-curl "http://localhost:8787/api/docs/my-note?api_key=your-secret-api-key"
-```
-
-`src/index.ts` の認証ミドルウェアのコメントを解除して有効化してください。
+環境変数 `API_KEY` を設定することで、API認証を有効化できます。詳細は `packages/server/README.md` を参照してください。
 
 ## 制限事項
 
@@ -270,51 +297,34 @@ curl "http://localhost:8787/api/docs/my-note?api_key=your-secret-api-key"
 - WebSocketによるリアルタイム通知
 - エンドツーエンド暗号化
 - CouchDBのview/query機能
+- 競合解決UI（サーバー側で最初の更新が優先されます）
 
 ## 開発
 
-### プロジェクト構成
+### 両方のパッケージを同時に開発
 
-```
-obsidian-sync-workers/
-├── src/
-│   ├── index.ts           # Workerエントリーポイント
-│   ├── types.ts           # TypeScript型定義
-│   ├── routes/
-│   │   ├── documents.ts   # ドキュメントAPI
-│   │   └── changes.ts     # 変更フィードAPI
-│   ├── db/
-│   │   ├── schema.sql     # D1スキーマ
-│   │   └── queries.ts     # データベースクエリ
-│   └── utils/
-│       ├── revision.ts    # リビジョン管理
-│       └── auth.ts        # 認証ヘルパー
-├── wrangler.toml          # Cloudflare設定
-├── package.json
-└── tsconfig.json
+```bash
+# ターミナル1: サーバー
+npm run dev:server
+
+# ターミナル2: プラグイン
+npm run dev:plugin
 ```
 
 ### テスト
 
-基本的な動作確認:
-
 ```bash
-# サーバー起動
+# サーバーのテスト
+cd packages/server
 npm run dev
 
-# ドキュメント作成
+# 別のターミナルで
+curl http://localhost:8787/
 curl -X PUT http://localhost:8787/api/docs/test1 \
   -H "Content-Type: application/json" \
   -d '{"_id": "test1", "content": "Test content"}'
-
-# ドキュメント取得
 curl http://localhost:8787/api/docs/test1
-
-# 変更フィード確認
 curl http://localhost:8787/api/changes
-
-# すべてのドキュメント確認
-curl http://localhost:8787/api/debug/docs
 ```
 
 ## ライセンス
@@ -326,4 +336,5 @@ MIT
 - [obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync) - オリジナルプロジェクト
 - [Cloudflare Workers](https://workers.cloudflare.com/)
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)
-- [Hono](https://hono.dev/)
+- [Elysia](https://elysiajs.com/)
+- [Obsidian Plugin Developer Docs](https://docs.obsidian.md/)
