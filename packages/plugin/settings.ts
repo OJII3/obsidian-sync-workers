@@ -17,7 +17,7 @@ export class SyncSettingsTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Obsidian Sync Workers Settings" });
 
     // Server URL
-    new Setting(containerEl)
+    const serverUrlSetting = new Setting(containerEl)
       .setName("Server URL")
       .setDesc("The URL of your Cloudflare Workers sync server")
       .addText((text) =>
@@ -25,8 +25,22 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setPlaceholder("http://localhost:8787")
           .setValue(this.plugin.settings.serverUrl)
           .onChange(async (value) => {
-            this.plugin.settings.serverUrl = value.trim();
-            await this.plugin.saveSettings();
+            const trimmedValue = value.trim();
+
+            // Validate URL format
+            if (trimmedValue && !trimmedValue.match(/^https?:\/\/.+/)) {
+              text.inputEl.addClass("is-invalid");
+              serverUrlSetting.setDesc(
+                "Invalid URL format. Must start with http:// or https://"
+              );
+            } else {
+              text.inputEl.removeClass("is-invalid");
+              serverUrlSetting.setDesc(
+                "The URL of your Cloudflare Workers sync server"
+              );
+              this.plugin.settings.serverUrl = trimmedValue;
+              await this.plugin.saveSettings();
+            }
           })
       );
 

@@ -5,6 +5,7 @@ export interface SyncSettings {
   autoSync: boolean;
   lastSync: number; // timestamp
   lastSeq: number; // last sequence number from changes feed
+  metadataCache: Record<string, DocMetadata>; // persistent metadata cache
 }
 
 export const DEFAULT_SETTINGS: SyncSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_SETTINGS: SyncSettings = {
   autoSync: true,
   lastSync: 0,
   lastSeq: 0,
+  metadataCache: {},
 };
 
 // API response types

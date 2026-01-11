@@ -13,14 +13,37 @@ export class SyncService {
   private settings: SyncSettings;
   private syncInProgress = false;
   private metadataCache: Map<string, DocMetadata> = new Map();
+  private saveSettings: () => Promise<void>;
 
-  constructor(vault: Vault, settings: SyncSettings) {
+  constructor(
+    vault: Vault,
+    settings: SyncSettings,
+    saveSettings: () => Promise<void>
+  ) {
     this.vault = vault;
     this.settings = settings;
+    this.saveSettings = saveSettings;
+
+    // Initialize metadata cache from persisted settings
+    if (settings.metadataCache) {
+      for (const [path, metadata] of Object.entries(settings.metadataCache)) {
+        this.metadataCache.set(path, metadata);
+      }
+    }
   }
 
   updateSettings(settings: SyncSettings) {
     this.settings = settings;
+  }
+
+  private async persistMetadataCache(): Promise<void> {
+    // Convert Map to plain object for persistence
+    const cacheObj: Record<string, DocMetadata> = {};
+    for (const [path, metadata] of this.metadataCache.entries()) {
+      cacheObj[path] = metadata;
+    }
+    this.settings.metadataCache = cacheObj;
+    await this.saveSettings();
   }
 
   async performSync(): Promise<void> {
@@ -47,7 +70,13 @@ export class SyncService {
       );
     } catch (error) {
       console.error("Sync error:", error);
-      new Notice(`Sync failed: ${error.message}`);
+      const message =
+        error instanceof Error
+          ? error.message
+          : error !== null && error !== undefined
+            ? String(error)
+            : "Unknown error";
+      new Notice(`Sync failed: ${message}`);
     } finally {
       this.syncInProgress = false;
     }
@@ -115,7 +144,26 @@ export class SyncService {
       await this.vault.modify(file, doc.content);
       console.log(`Updated ${path}`);
     } else {
-      // Create new file
+      // Create new file, ensuring parent folders exist
+      const lastSlashIndex = path.lastIndexOf("/");
+      if (lastSlashIndex !== -1) {
+        const folderPath = path.substring(0, lastSlashIndex);
+        if (folderPath) {
+          const existingFolder = this.vault.getAbstractFileByPath(folderPath);
+          if (!existingFolder) {
+            // Create all parent folders
+            const segments = folderPath.split("/");
+            let currentPath = "";
+            for (const segment of segments) {
+              if (!segment) continue;
+              currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+              if (!this.vault.getAbstractFileByPath(currentPath)) {
+                await this.vault.createFolder(currentPath);
+              }
+            }
+          }
+        }
+      }
       await this.vault.create(path, doc.content);
       console.log(`Created ${path}`);
     }
@@ -126,6 +174,7 @@ export class SyncService {
       rev: doc._rev,
       lastModified: Date.now(),
     });
+    await this.persistMetadataCache();
   }
 
   private async deleteLocalFile(docId: string): Promise<void> {
@@ -135,6 +184,7 @@ export class SyncService {
     if (file instanceof TFile) {
       await this.vault.delete(file);
       this.metadataCache.delete(path);
+      await this.persistMetadataCache();
       console.log(`Deleted ${path}`);
     }
   }
@@ -142,8 +192,11 @@ export class SyncService {
   private async pushChanges(): Promise<void> {
     const files = this.vault.getMarkdownFiles();
     const docsToUpdate: DocumentInput[] = [];
+    const currentFilePaths = new Set<string>();
 
+    // Check for modified files
     for (const file of files) {
+      currentFilePaths.add(file.path);
       const metadata = this.metadataCache.get(file.path);
       const fileModTime = file.stat.mtime;
 
@@ -156,6 +209,19 @@ export class SyncService {
           _id: docId,
           _rev: metadata?.rev,
           content,
+        });
+      }
+    }
+
+    // Check for deleted files
+    for (const [path, metadata] of this.metadataCache.entries()) {
+      if (!currentFilePaths.has(path)) {
+        // File was deleted locally, push deletion to server
+        const docId = this.pathToDocId(path);
+        docsToUpdate.push({
+          _id: docId,
+          _rev: metadata.rev,
+          _deleted: true,
         });
       }
     }
@@ -192,16 +258,21 @@ export class SyncService {
         const path = this.docIdToPath(result.id);
         const file = this.vault.getAbstractFileByPath(path);
         if (file instanceof TFile) {
+          // File exists, update metadata
           this.metadataCache.set(path, {
             path,
             rev: result.rev,
             lastModified: file.stat.mtime,
           });
+        } else {
+          // File doesn't exist (was deleted), remove from cache
+          this.metadataCache.delete(path);
         }
       } else if (result.error) {
         console.error(`Failed to update ${result.id}: ${result.error}`);
       }
     }
+    await this.persistMetadataCache();
   }
 
   private pathToDocId(path: string): string {

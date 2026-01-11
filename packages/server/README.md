@@ -20,7 +20,7 @@
 ```
 Obsidian Client
     ↓
-Cloudflare Workers (Hono Framework)
+Cloudflare Workers (Elysia Framework)
     ↓
 D1 Database (SQLite)
 ```
@@ -177,11 +177,19 @@ curl "http://localhost:8787/api/changes?since=0&limit=100&vault_id=default"
 }
 ```
 
-### デバッグ
+### デバッグ（ローカル環境専用）
 
 #### GET /api/debug/docs
 
-すべてのドキュメントを取得（デバッグ用）
+すべてのドキュメントを取得するデバッグ用エンドポイントです。
+
+**⚠️ 重要: このエンドポイントは本番環境では有効にしないでください。**
+
+- 認証なしでアクセス可能な状態で公開すると、第三者が特定の `vault_id` の全ノートを取得・列挙できてしまいます。
+- 本番で利用する場合は、強力な認証/認可の背後に置くか、ワーカー自体を内部ネットワーク/ローカル環境のみに限定してください。
+- Cloudflare Workers をパブリック URL にデプロイする際は、この `/api/debug/docs` ルートを無効化するか、アクセス制御を必ず設定してください。
+
+以下の例は「ローカル開発環境でのみ」利用することを想定しています。
 
 ```bash
 curl "http://localhost:8787/api/debug/docs?vault_id=default&limit=10"
@@ -255,10 +263,10 @@ curl -H "Authorization: Bearer your-secret-api-key" \
   http://localhost:8787/api/docs/my-note
 ```
 
-または、クエリパラメータ:
-```bash
-curl "http://localhost:8787/api/docs/my-note?api_key=your-secret-api-key"
-```
+**⚠️ セキュリティ上の重要な注意:**
+- APIキーなどの認証情報は、必ず `Authorization: Bearer ...` ヘッダーで送信してください。
+- クエリパラメータ（例: `?api_key=...`）での送信は**絶対に避けてください**。
+- クエリパラメータに含めると、サーバーやプロキシのアクセスログ、ブラウザの履歴、リファラーヘッダーなどにAPIキーが残り、セキュリティリスクとなります。
 
 `src/index.ts` の認証ミドルウェアのコメントを解除して有効化してください。
 
@@ -326,4 +334,4 @@ MIT
 - [obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync) - オリジナルプロジェクト
 - [Cloudflare Workers](https://workers.cloudflare.com/)
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)
-- [Hono](https://hono.dev/)
+- [Elysia](https://elysiajs.com/)

@@ -12,7 +12,11 @@ export default class SyncWorkersPlugin extends Plugin {
     await this.loadSettings();
 
     // Initialize sync service
-    this.syncService = new SyncService(this.app.vault, this.settings);
+    this.syncService = new SyncService(
+      this.app.vault,
+      this.settings,
+      async () => await this.saveSettings()
+    );
 
     // Add settings tab
     this.addSettingTab(new SyncSettingsTab(this.app, this));
