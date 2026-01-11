@@ -7,11 +7,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:server": "npm run dev --workspace=packages/server",
-    "dev:plugin": "npm run dev --workspace=packages/plugin",
-    "build:server": "npm run deploy --workspace=packages/server",
-    "build:plugin": "npm run build --workspace=packages/plugin",
-    "build": "npm run build:server && npm run build:plugin"
+    "dev:server": "bun run dev --filter=packages/server",
+    "dev:plugin": "bun run dev --filter=packages/plugin",
+    "build:server": "bun run deploy --filter=packages/server",
+    "build:plugin": "bun run build --filter=packages/plugin",
+    "build": "bun run build:server && bun run build:plugin"
   },
   "keywords": [
     "obsidian",

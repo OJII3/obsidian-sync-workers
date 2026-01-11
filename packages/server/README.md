@@ -29,14 +29,14 @@ D1 Database (SQLite)
 
 ### 前提条件
 
-- Node.js 18以上
+- Bun (最新版推奨)
 - Cloudflareアカウント
 - Wrangler CLI
 
 ### 1. 依存関係のインストール
 
 ```bash
-npm install
+bun install
 ```
 
 ### 2. D1データベースの作成
@@ -53,24 +53,50 @@ wrangler d1 create obsidian-sync
 
 ```bash
 # 本番環境
-npm run db:init
+bun run db:init
 
 # ローカル開発環境
-npm run db:local
+bun run db:local
 ```
 
 ### 4. ローカル開発サーバーの起動
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 サーバーは `http://localhost:8787` で起動します。
 
 ### 5. デプロイ
 
+#### 手動デプロイ
+
 ```bash
-npm run deploy
+bun run deploy
+```
+
+#### 自動デプロイ（GitHub Actions）
+
+mainブランチにpushすると自動的にCloudflare Workersにデプロイされます。
+
+**必要なGitHubシークレットの設定:**
+
+1. GitHubリポジトリの Settings → Secrets and variables → Actions を開く
+2. 以下のシークレットを追加:
+
+| シークレット名 | 説明 | 取得方法 |
+|--------------|------|---------|
+| `CLOUDFLARE_API_TOKEN` | CloudflareのAPIトークン | [Cloudflareダッシュボード](https://dash.cloudflare.com/profile/api-tokens) → Create Token → Edit Cloudflare Workers テンプレートを使用 |
+| `CLOUDFLARE_ACCOUNT_ID` | CloudflareのアカウントID | [Cloudflareダッシュボード](https://dash.cloudflare.com/) → 右サイドバーに表示されているAccount ID |
+
+**ローカル開発環境の設定:**
+
+```bash
+# .dev.vars.exampleをコピー
+cp .dev.vars.example .dev.vars
+
+# .dev.varsを編集して環境変数を設定
+# API_KEY=your-secret-key
 ```
 
 ## API リファレンス
@@ -308,7 +334,7 @@ obsidian-sync-workers/
 
 ```bash
 # サーバー起動
-npm run dev
+bun run dev
 
 # ドキュメント作成
 curl -X PUT http://localhost:8787/api/docs/test1 \
