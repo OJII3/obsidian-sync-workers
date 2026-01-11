@@ -1,28 +1,24 @@
 {
-  "name": "obsidian-sync-workers",
+  "name": "obsidian-sync-monorepo",
   "version": "0.1.0",
-  "description": "Simple Obsidian sync server using Cloudflare Workers and D1",
-  "main": "src/index.ts",
+  "private": true,
+  "description": "Obsidian sync server and plugin monorepo",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 execute obsidian-sync --file=./src/db/schema.sql",
-    "db:local": "wrangler d1 execute obsidian-sync --local --file=./src/db/schema.sql"
+    "dev:server": "npm run dev --workspace=packages/server",
+    "dev:plugin": "npm run dev --workspace=packages/plugin",
+    "build:server": "npm run deploy --workspace=packages/server",
+    "build:plugin": "npm run build --workspace=packages/plugin",
+    "build": "npm run build:server && npm run build:plugin"
   },
   "keywords": [
     "obsidian",
     "sync",
     "cloudflare-workers",
-    "d1"
+    "plugin"
   ],
   "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "elysia": "^1.4.7"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240925.0",
-    "wrangler": "^4.58.0",
-    "typescript": "^5.6.3"
-  }
+  "license": "MIT"
 }

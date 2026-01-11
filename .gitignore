@@ -6,3 +6,8 @@ node_modules/
 dist/
 .env
 .env.local
+package-lock.json
+
+# Plugin build output
+packages/plugin/main.js
+packages/plugin/main.js.map
