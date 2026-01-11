@@ -34,7 +34,7 @@ D1 Database (SQLite)
 
 ### 前提条件
 
-- Node.js 18以上
+- Node.js 24 (LTS) 以上
 - npm または pnpm
 - Cloudflareアカウント（サーバーデプロイ用）
 - Wrangler CLI
@@ -90,6 +90,8 @@ npm run dev:server
 
 ### 4. デプロイ
 
+#### 手動デプロイ
+
 ```bash
 # packages/server ディレクトリから
 npm run deploy
@@ -97,6 +99,12 @@ npm run deploy
 # またはルートディレクトリから
 npm run build:server
 ```
+
+#### 自動デプロイ
+
+mainブランチにpushすると、GitHub Actionsが自動的にCloudflare Workersにデプロイします。
+
+詳細な設定方法は `packages/server/README.md` を参照してください。
 
 ## プラグインのセットアップ
 

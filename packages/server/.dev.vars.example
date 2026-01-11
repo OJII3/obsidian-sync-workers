@@ -1,0 +1,6 @@
+# Local development environment variables
+# Copy this file to .dev.vars and fill in your actual values
+
+# API Key for authentication (optional)
+# If set, API requests must include this key in the Authorization header
+API_KEY=
