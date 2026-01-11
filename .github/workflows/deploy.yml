@@ -29,6 +29,9 @@ jobs:
         working-directory: packages/server
         run: bun install --frozen-lockfile
 
+      - name: Install Wrangler v4
+        run: npm install -g wrangler@4
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:

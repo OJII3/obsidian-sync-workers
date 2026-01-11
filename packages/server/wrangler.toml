@@ -1,6 +1,7 @@
 name = "obsidian-sync-workers"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
+# Account ID は GitHub Actions の CLOUDFLARE_ACCOUNT_ID シークレットから設定されます
 
 [[d1_databases]]
 binding = "DB"
