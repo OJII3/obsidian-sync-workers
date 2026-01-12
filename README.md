@@ -262,8 +262,7 @@ obsidian-sync-workers/
 │       ├── manifest.json    # プラグインマニフェスト
 │       ├── package.json
 │       └── tsconfig.json
-├── package.json             # ルートpackage.json
-├── pnpm-workspace.yaml      # pnpmワークスペース設定
+├── package.json             # ルートpackage.json（workspacesを含む）
 └── README.md
 ```
 
@@ -301,7 +300,12 @@ obsidian-sync-workers/
 - WebSocketによるリアルタイム通知
 - エンドツーエンド暗号化
 - CouchDBのview/query機能
-- 競合解決UI（サーバー側で最初の更新が優先されます）
+- 差分同期（現在はファイル全体を同期）
+
+### 実装済み機能
+
+- ✅ 3-way mergeによる自動競合解決
+- ✅ 競合解決UI（local/remote選択）
 
 ## 開発
 
