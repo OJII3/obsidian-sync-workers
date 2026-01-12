@@ -1,24 +1,30 @@
 {
-  "name": "obsidian-sync-monorepo",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Obsidian sync server and plugin monorepo",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "dev:server": "bun run --cwd packages/server dev",
-    "dev:plugin": "bun run --cwd packages/plugin dev",
-    "build:server": "bun run --cwd packages/server deploy",
-    "build:plugin": "bun run --cwd packages/plugin build",
-    "build": "bun run build:server && bun run build:plugin"
-  },
-  "keywords": [
-    "obsidian",
-    "sync",
-    "cloudflare-workers",
-    "plugin"
-  ],
-  "author": "",
-  "license": "MIT"
+	"name": "obsidian-sync-monorepo",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Obsidian sync server and plugin monorepo",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"dev:server": "bun run --cwd packages/server dev",
+		"dev:plugin": "bun run --cwd packages/plugin dev",
+		"build:server": "bun run --cwd packages/server deploy",
+		"build:plugin": "bun run --cwd packages/plugin build",
+		"build": "bun run build:server && bun run build:plugin",
+		"lint": "biome lint .",
+		"format": "biome format --write .",
+		"check": "biome check --write ."
+	},
+	"keywords": [
+		"obsidian",
+		"sync",
+		"cloudflare-workers",
+		"plugin"
+	],
+	"author": "",
+	"license": "MIT",
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.11"
+	}
 }
