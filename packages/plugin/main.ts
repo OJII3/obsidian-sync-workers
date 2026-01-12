@@ -13,6 +13,7 @@ export default class SyncWorkersPlugin extends Plugin {
 
 		// Initialize sync service
 		this.syncService = new SyncService(
+			this.app,
 			this.app.vault,
 			this.settings,
 			async () => await this.saveSettings(),

@@ -36,6 +36,7 @@ export interface DocumentInput {
 	_rev?: string;
 	content?: string;
 	_deleted?: boolean;
+	_base_content?: string; // For three-way merge: last synced content
 }
 
 export interface BulkDocsRequest {

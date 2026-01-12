@@ -31,6 +31,7 @@ export interface DocumentInput {
 	_rev?: string;
 	content?: string;
 	_deleted?: boolean;
+	_base_content?: string; // For three-way merge: last synced content
 }
 
 export interface ChangeResult {
@@ -51,6 +52,17 @@ export interface BulkDocsResponse {
 	rev?: string;
 	error?: string;
 	reason?: string;
+	merged?: boolean; // Indicates automatic merge was performed
+	current_content?: string; // Server's current content (for conflicts)
+	current_rev?: string; // Server's current revision (for conflicts)
+	conflicts?: ConflictRegion[]; // Conflict details
+}
+
+export interface ConflictRegion {
+	base: string[];
+	local: string[];
+	remote: string[];
+	startLine: number;
 }
 
 // Local document metadata
@@ -58,4 +70,5 @@ export interface DocMetadata {
 	path: string;
 	rev: string;
 	lastModified: number;
+	baseContent?: string; // Content at last successful sync (for 3-way merge)
 }
