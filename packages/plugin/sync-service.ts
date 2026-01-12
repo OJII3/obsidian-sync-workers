@@ -1,4 +1,4 @@
-import { Notice, TFile, Vault } from "obsidian";
+import { App, Notice, TFile, Vault } from "obsidian";
 import {
   SyncSettings,
   ChangesResponse,
@@ -7,8 +7,13 @@ import {
   BulkDocsResponse,
   DocMetadata,
 } from "./types";
+import {
+  ConflictResolutionModal,
+  ConflictResolution,
+} from "./conflict-modal";
 
 export class SyncService {
+  private app: App;
   private vault: Vault;
   private settings: SyncSettings;
   private syncInProgress = false;
@@ -16,10 +21,12 @@ export class SyncService {
   private saveSettings: () => Promise<void>;
 
   constructor(
+    app: App,
     vault: Vault,
     settings: SyncSettings,
     saveSettings: () => Promise<void>
   ) {
+    this.app = app;
     this.vault = vault;
     this.settings = settings;
     this.saveSettings = saveSettings;
@@ -168,11 +175,12 @@ export class SyncService {
       console.log(`Created ${path}`);
     }
 
-    // Update metadata cache
+    // Update metadata cache with base content for future merges
     this.metadataCache.set(path, {
       path,
       rev: doc._rev,
       lastModified: Date.now(),
+      baseContent: doc.content, // Store content for 3-way merge
     });
     await this.persistMetadataCache();
   }
@@ -209,6 +217,7 @@ export class SyncService {
           _id: docId,
           _rev: metadata?.rev,
           content,
+          _base_content: metadata?.baseContent, // Send base content for 3-way merge
         });
       }
     }
@@ -252,27 +261,122 @@ export class SyncService {
 
     const results: BulkDocsResponse[] = await response.json();
 
-    // Update metadata cache with new revisions
+    // Update metadata cache with new revisions and handle conflicts
     for (const result of results) {
       if (result.ok && result.rev) {
         const path = this.docIdToPath(result.id);
         const file = this.vault.getAbstractFileByPath(path);
-        if (file instanceof TFile) {
-          // File exists, update metadata
+
+        if (result.merged) {
+          // Automatic merge was performed, pull the merged content
+          new Notice(`ファイル ${path} が自動的にマージされました`);
+          await this.pullDocument(result.id);
+        } else if (file instanceof TFile) {
+          // Normal update - update metadata with current content as base
+          const content = await this.vault.read(file);
           this.metadataCache.set(path, {
             path,
             rev: result.rev,
             lastModified: file.stat.mtime,
+            baseContent: content,
           });
         } else {
           // File doesn't exist (was deleted), remove from cache
           this.metadataCache.delete(path);
         }
+      } else if (result.error === "conflict") {
+        // Conflict detected - handle with user choice
+        await this.handleConflict(result);
       } else if (result.error) {
         console.error(`Failed to update ${result.id}: ${result.error}`);
+        new Notice(`同期エラー: ${result.id} - ${result.reason || result.error}`);
       }
     }
     await this.persistMetadataCache();
+  }
+
+  private async handleConflict(result: BulkDocsResponse): Promise<void> {
+    const path = this.docIdToPath(result.id);
+    const file = this.vault.getAbstractFileByPath(path);
+
+    if (!(file instanceof TFile)) {
+      console.error(`Cannot resolve conflict: file not found ${path}`);
+      return;
+    }
+
+    const localContent = await this.vault.read(file);
+    const remoteContent = result.current_content || "";
+
+    // Show conflict resolution modal
+    const modal = new ConflictResolutionModal(
+      this.app,
+      path,
+      localContent,
+      remoteContent
+    );
+    modal.open();
+
+    const resolution = await modal.waitForResult();
+
+    if (resolution === ConflictResolution.UseLocal) {
+      // Force push local version
+      new Notice(`ローカル版を使用: ${path}`);
+      const content = await this.vault.read(file);
+      await this.forcePushDocument(result.id, content, result.current_rev);
+    } else if (resolution === ConflictResolution.UseRemote) {
+      // Accept remote version
+      new Notice(`リモート版を使用: ${path}`);
+      await this.vault.modify(file, remoteContent);
+      this.metadataCache.set(path, {
+        path,
+        rev: result.current_rev || "",
+        lastModified: file.stat.mtime,
+        baseContent: remoteContent,
+      });
+      await this.persistMetadataCache();
+    } else {
+      // Cancel - keep local but don't sync
+      new Notice(`同期をキャンセル: ${path}`);
+    }
+  }
+
+  private async forcePushDocument(
+    docId: string,
+    content: string,
+    currentRev?: string
+  ): Promise<void> {
+    // Force push by using the server's current revision
+    const url = `${this.settings.serverUrl}/api/docs/${encodeURIComponent(
+      docId
+    )}?vault_id=${this.settings.vaultId}`;
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        _id: docId,
+        _rev: currentRev,
+        content,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to force push document: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    if (result.ok && result.rev) {
+      const path = this.docIdToPath(docId);
+      this.metadataCache.set(path, {
+        path,
+        rev: result.rev,
+        lastModified: Date.now(),
+        baseContent: content,
+      });
+      await this.persistMetadataCache();
+    }
   }
 
   private pathToDocId(path: string): string {

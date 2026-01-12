@@ -1,0 +1,50 @@
+/* Conflict resolution modal styles */
+
+.conflict-preview-container {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.conflict-preview {
+  flex: 1;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 0.5rem;
+  background-color: var(--background-secondary);
+}
+
+.conflict-preview h3 {
+  margin-top: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.conflict-preview pre {
+  margin: 0;
+  padding: 0.5rem;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.conflict-preview code {
+  font-family: var(--font-monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.conflict-button-container {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 1rem;
+}
+
+.mod-warning {
+  color: var(--text-warning);
+  font-weight: 500;
+}

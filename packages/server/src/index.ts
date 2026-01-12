@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { Env, ChangesResponse } from './types';
 import { Database } from './db/queries';
 import { generateRevision } from './utils/revision';
+import { threeWayMerge } from './utils/merge';
 import type { DocumentInput, BulkDocsRequest } from './types';
 
 const app = new Elysia({ aot: false })
@@ -193,16 +194,63 @@ const app = new Elysia({ aot: false })
           try {
             const existing = await db.getDocument(doc._id, vaultId);
             let newRev: string;
+            let finalContent = doc.content || null;
 
             if (existing) {
               // Check revision if provided
               if (doc._rev && doc._rev !== existing.rev) {
-                results.push({
-                  id: doc._id,
-                  error: 'conflict',
-                  reason: 'Document update conflict',
-                });
-                continue;
+                // Revision conflict detected
+                // Try three-way merge if base content is provided
+                if (doc._base_content && doc.content && existing.content) {
+                  const mergeResult = threeWayMerge(
+                    doc._base_content,
+                    existing.content,
+                    doc.content
+                  );
+
+                  if (mergeResult.success && mergeResult.content) {
+                    // Merge succeeded, use merged content
+                    finalContent = mergeResult.content;
+                    newRev = generateRevision(existing.rev);
+
+                    await db.upsertDocument({
+                      id: doc._id,
+                      vaultId,
+                      content: finalContent,
+                      rev: newRev,
+                      deleted: doc._deleted ? 1 : 0,
+                    });
+
+                    results.push({
+                      ok: true,
+                      id: doc._id,
+                      rev: newRev,
+                      merged: true,
+                    });
+                    continue;
+                  } else {
+                    // Merge failed, return conflict with both versions
+                    results.push({
+                      id: doc._id,
+                      error: 'conflict',
+                      reason: 'Document update conflict - manual resolution required',
+                      current_content: existing.content,
+                      current_rev: existing.rev,
+                      conflicts: mergeResult.conflicts,
+                    });
+                    continue;
+                  }
+                } else {
+                  // No base content provided, cannot merge
+                  results.push({
+                    id: doc._id,
+                    error: 'conflict',
+                    reason: 'Document update conflict',
+                    current_content: existing.content,
+                    current_rev: existing.rev,
+                  });
+                  continue;
+                }
               }
               newRev = generateRevision(existing.rev);
             } else {
@@ -212,7 +260,7 @@ const app = new Elysia({ aot: false })
             await db.upsertDocument({
               id: doc._id,
               vaultId,
-              content: doc.content || null,
+              content: finalContent,
               rev: newRev,
               deleted: doc._deleted ? 1 : 0,
             });
@@ -250,16 +298,63 @@ const app = new Elysia({ aot: false })
       try {
         const existing = await db.getDocument(doc._id, vaultId);
         let newRev: string;
+        let finalContent = doc.content || null;
 
         if (existing) {
           // Check revision if provided
           if (doc._rev && doc._rev !== existing.rev) {
-            results.push({
-              id: doc._id,
-              error: 'conflict',
-              reason: 'Document update conflict',
-            });
-            continue;
+            // Revision conflict detected
+            // Try three-way merge if base content is provided
+            if (doc._base_content && doc.content && existing.content) {
+              const mergeResult = threeWayMerge(
+                doc._base_content,
+                existing.content,
+                doc.content
+              );
+
+              if (mergeResult.success && mergeResult.content) {
+                // Merge succeeded, use merged content
+                finalContent = mergeResult.content;
+                newRev = generateRevision(existing.rev);
+
+                await db.upsertDocument({
+                  id: doc._id,
+                  vaultId,
+                  content: finalContent,
+                  rev: newRev,
+                  deleted: doc._deleted ? 1 : 0,
+                });
+
+                results.push({
+                  ok: true,
+                  id: doc._id,
+                  rev: newRev,
+                  merged: true,
+                });
+                continue;
+              } else {
+                // Merge failed, return conflict with both versions
+                results.push({
+                  id: doc._id,
+                  error: 'conflict',
+                  reason: 'Document update conflict - manual resolution required',
+                  current_content: existing.content,
+                  current_rev: existing.rev,
+                  conflicts: mergeResult.conflicts,
+                });
+                continue;
+              }
+            } else {
+              // No base content provided, cannot merge
+              results.push({
+                id: doc._id,
+                error: 'conflict',
+                reason: 'Document update conflict',
+                current_content: existing.content,
+                current_rev: existing.rev,
+              });
+              continue;
+            }
           }
           newRev = generateRevision(existing.rev);
         } else {
@@ -269,7 +364,7 @@ const app = new Elysia({ aot: false })
         await db.upsertDocument({
           id: doc._id,
           vaultId,
-          content: doc.content || null,
+          content: finalContent,
           rev: newRev,
           deleted: doc._deleted ? 1 : 0,
         });
