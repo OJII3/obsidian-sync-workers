@@ -1,0 +1,10 @@
+# Lefthook configuration for pre-commit hooks
+# https://lefthook.dev/configuration/
+
+pre-commit:
+  commands:
+    biome-check:
+      # Run Biome check (lint + format) on staged files
+      glob: "*.{ts,js,json}"
+      run: bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
