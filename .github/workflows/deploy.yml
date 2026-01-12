@@ -26,7 +26,6 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        working-directory: packages/server
         run: bun install --frozen-lockfile
 
       - name: Deploy to Cloudflare Workers
