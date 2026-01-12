@@ -22,13 +22,21 @@ packages/
 ├── server/          # Cloudflare Workersバックエンド
 │   ├── src/
 │   │   ├── index.ts         # Elysiaアプリ
-│   │   ├── db/              # D1クエリ
-│   │   └── utils/           # リビジョン管理
+│   │   ├── types.ts         # TypeScript型定義
+│   │   ├── db/
+│   │   │   ├── schema.sql   # D1スキーマ
+│   │   │   └── queries.ts   # データベースクエリ
+│   │   └── utils/
+│   │       ├── revision.ts  # リビジョン管理
+│   │       ├── auth.ts      # 認証ヘルパー
+│   │       └── merge.ts     # 3-way mergeアルゴリズム
 │   └── .dev.vars.example    # 環境変数テンプレート
 └── plugin/          # Obsidianプラグイン
     ├── main.ts              # エントリーポイント
     ├── sync-service.ts      # 同期ロジック
-    └── settings.ts          # 設定UI
+    ├── settings.ts          # 設定UI
+    ├── conflict-modal.ts    # 競合解決UI
+    └── types.ts             # TypeScript型定義
 ```
 
 ## 開発フロー
