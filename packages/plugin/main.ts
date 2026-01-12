@@ -1,15 +1,20 @@
-import { Notice, Plugin } from "obsidian";
+import { Plugin } from "obsidian";
 import { SyncSettingsTab } from "./settings";
-import { SyncService } from "./sync-service";
+import { SyncService, type SyncStatus } from "./sync-service";
 import { DEFAULT_SETTINGS, type SyncSettings } from "./types";
 
 export default class SyncWorkersPlugin extends Plugin {
 	settings: SyncSettings;
 	syncService: SyncService;
 	private syncIntervalId: number | null = null;
+	private statusBarItem: HTMLElement | null = null;
 
 	async onload() {
 		await this.loadSettings();
+
+		// Add status bar item
+		this.statusBarItem = this.addStatusBarItem();
+		this.updateStatusBar({ status: "idle" });
 
 		// Initialize sync service
 		this.syncService = new SyncService(
@@ -17,6 +22,7 @@ export default class SyncWorkersPlugin extends Plugin {
 			this.app.vault,
 			this.settings,
 			async () => await this.saveSettings(),
+			(status) => this.updateStatusBar(status),
 		);
 
 		// Add settings tab
@@ -44,11 +50,10 @@ export default class SyncWorkersPlugin extends Plugin {
 				this.saveSettings();
 				if (this.settings.autoSync) {
 					this.startAutoSync();
-					new Notice("Auto sync enabled");
 				} else {
 					this.stopAutoSync();
-					new Notice("Auto sync disabled");
 				}
+				this.updateStatusBar({ status: "idle" });
 			},
 		});
 
@@ -94,6 +99,40 @@ export default class SyncWorkersPlugin extends Plugin {
 			window.clearInterval(this.syncIntervalId);
 			this.syncIntervalId = null;
 			console.log("Auto sync stopped");
+		}
+	}
+
+	private updateStatusBar(status: SyncStatus) {
+		if (!this.statusBarItem) return;
+
+		const autoSyncIcon = this.settings.autoSync ? "⟳" : "";
+
+		switch (status.status) {
+			case "syncing":
+				this.statusBarItem.setText(`${autoSyncIcon} Syncing...`);
+				break;
+			case "success":
+				this.statusBarItem.setText(
+					`${autoSyncIcon} Synced ${status.duration ? `(${status.duration})` : ""}`.trim(),
+				);
+				break;
+			case "error":
+				this.statusBarItem.setText(`${autoSyncIcon} Sync error`);
+				this.statusBarItem.setAttribute("title", status.message || "Unknown error");
+				break;
+			case "idle":
+			default:
+				if (this.settings.lastSync) {
+					const lastSyncDate = new Date(this.settings.lastSync);
+					const timeStr = lastSyncDate.toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					});
+					this.statusBarItem.setText(`${autoSyncIcon} Last sync: ${timeStr}`.trim());
+				} else {
+					this.statusBarItem.setText(`${autoSyncIcon} Not synced`.trim());
+				}
+				break;
 		}
 	}
 }

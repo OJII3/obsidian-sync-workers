@@ -1,13 +1,19 @@
-import { App, Notice, TFile, Vault } from "obsidian";
-import {
-	SyncSettings,
-	ChangesResponse,
-	DocumentResponse,
-	DocumentInput,
+import { type App, TFile, type Vault } from "obsidian";
+import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
+import type {
 	BulkDocsResponse,
+	ChangesResponse,
 	DocMetadata,
+	DocumentInput,
+	DocumentResponse,
+	SyncSettings,
 } from "./types";
-import { ConflictResolutionModal, ConflictResolution } from "./conflict-modal";
+
+export type SyncStatus =
+	| { status: "idle" }
+	| { status: "syncing" }
+	| { status: "success"; duration?: string }
+	| { status: "error"; message?: string };
 
 export class SyncService {
 	private app: App;
@@ -16,12 +22,20 @@ export class SyncService {
 	private syncInProgress = false;
 	private metadataCache: Map<string, DocMetadata> = new Map();
 	private saveSettings: () => Promise<void>;
+	private onStatusChange: (status: SyncStatus) => void;
 
-	constructor(app: App, vault: Vault, settings: SyncSettings, saveSettings: () => Promise<void>) {
+	constructor(
+		app: App,
+		vault: Vault,
+		settings: SyncSettings,
+		saveSettings: () => Promise<void>,
+		onStatusChange: (status: SyncStatus) => void,
+	) {
 		this.app = app;
 		this.vault = vault;
 		this.settings = settings;
 		this.saveSettings = saveSettings;
+		this.onStatusChange = onStatusChange;
 
 		// Initialize metadata cache from persisted settings
 		if (settings.metadataCache) {
@@ -53,10 +67,9 @@ export class SyncService {
 
 		this.syncInProgress = true;
 		const startTime = Date.now();
+		this.onStatusChange({ status: "syncing" });
 
 		try {
-			new Notice("Starting sync...");
-
 			// Step 1: Pull changes from server
 			await this.pullChanges();
 
@@ -64,7 +77,8 @@ export class SyncService {
 			await this.pushChanges();
 
 			this.settings.lastSync = Date.now();
-			new Notice(`Sync completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+			const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+			this.onStatusChange({ status: "success", duration });
 		} catch (error) {
 			console.error("Sync error:", error);
 			const message =
@@ -73,7 +87,7 @@ export class SyncService {
 					: error !== null && error !== undefined
 						? String(error)
 						: "Unknown error";
-			new Notice(`Sync failed: ${message}`);
+			this.onStatusChange({ status: "error", message });
 		} finally {
 			this.syncInProgress = false;
 		}
@@ -269,10 +283,9 @@ export class SyncService {
 
 					try {
 						await this.pullDocument(result.id);
-						new Notice(`File automatically merged: ${path}`);
+						console.log(`File automatically merged: ${path}`);
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
-						new Notice(`Merge succeeded but failed to pull: ${path}`, 5000);
 					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with current content as base
@@ -291,8 +304,7 @@ export class SyncService {
 				// Conflict detected - handle with user choice
 				await this.handleConflict(result);
 			} else if (result.error) {
-				console.error(`Failed to update ${result.id}: ${result.error}`);
-				new Notice(`Sync error: ${result.id} - ${result.reason || result.error}`, 5000);
+				console.error(`Failed to update ${result.id}: ${result.error} - ${result.reason || ""}`);
 			}
 		}
 		await this.persistMetadataCache();
@@ -321,10 +333,9 @@ export class SyncService {
 			try {
 				const content = await this.vault.read(file);
 				await this.forcePushDocument(result.id, content, result.current_rev);
-				new Notice(`Using local version: ${path}`);
+				console.log(`Using local version: ${path}`);
 			} catch (error) {
 				console.error(`Failed to force push ${path}:`, error);
-				new Notice(`Failed to sync local version: ${path} - ${error.message}`, 5000);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version
@@ -337,14 +348,13 @@ export class SyncService {
 					baseContent: remoteContent,
 				});
 				await this.persistMetadataCache();
-				new Notice(`Using remote version: ${path}`);
+				console.log(`Using remote version: ${path}`);
 			} catch (error) {
 				console.error(`Failed to apply remote version ${path}:`, error);
-				new Notice(`Failed to apply remote version: ${path} - ${error.message}`, 5000);
 			}
 		} else {
 			// Cancel - keep local but don't sync
-			new Notice(`Sync cancelled: ${path}`);
+			console.log(`Sync cancelled: ${path}`);
 		}
 	}
 
