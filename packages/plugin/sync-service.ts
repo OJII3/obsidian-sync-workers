@@ -7,7 +7,11 @@ import type {
 	DocumentInput,
 	DocumentResponse,
 	SyncSettings,
+	AttachmentMetadata,
+	AttachmentChangesResponse,
+	AttachmentUploadResponse,
 } from "./types";
+import { isAttachmentFile, getContentType } from "./types";
 
 export type SyncStatusType = "idle" | "syncing" | "success" | "error" | "paused";
 
@@ -16,7 +20,7 @@ export interface SyncStatus {
 	message?: string;
 	duration?: string;
 	progress?: {
-		phase: "pull" | "push";
+		phase: "pull" | "push" | "pull-attachments" | "push-attachments";
 		current: number;
 		total: number;
 	};
@@ -25,6 +29,8 @@ export interface SyncStatus {
 		pushed: number;
 		conflicts: number;
 		errors: number;
+		attachmentsPulled: number;
+		attachmentsPushed: number;
 	};
 }
 
@@ -34,9 +40,17 @@ export class SyncService {
 	private settings: SyncSettings;
 	private syncInProgress = false;
 	private metadataCache: Map<string, DocMetadata> = new Map();
+	private attachmentCache: Map<string, AttachmentMetadata> = new Map();
 	private saveSettings: () => Promise<void>;
 	private onStatusChange: (status: SyncStatus) => void;
-	private syncStats = { pulled: 0, pushed: 0, conflicts: 0, errors: 0 };
+	private syncStats = {
+		pulled: 0,
+		pushed: 0,
+		conflicts: 0,
+		errors: 0,
+		attachmentsPulled: 0,
+		attachmentsPushed: 0,
+	};
 
 	constructor(
 		app: App,
@@ -57,6 +71,13 @@ export class SyncService {
 				this.metadataCache.set(path, metadata);
 			}
 		}
+
+		// Initialize attachment cache from persisted settings
+		if (settings.attachmentCache) {
+			for (const [path, metadata] of Object.entries(settings.attachmentCache)) {
+				this.attachmentCache.set(path, metadata);
+			}
+		}
 	}
 
 	updateSettings(settings: SyncSettings) {
@@ -70,6 +91,14 @@ export class SyncService {
 			cacheObj[path] = metadata;
 		}
 		this.settings.metadataCache = cacheObj;
+
+		// Also persist attachment cache
+		const attachmentCacheObj: Record<string, AttachmentMetadata> = {};
+		for (const [path, metadata] of this.attachmentCache.entries()) {
+			attachmentCacheObj[path] = metadata;
+		}
+		this.settings.attachmentCache = attachmentCacheObj;
+
 		await this.saveSettings();
 	}
 
@@ -82,15 +111,28 @@ export class SyncService {
 		this.syncInProgress = true;
 		const startTime = Date.now();
 		// Reset stats for this sync
-		this.syncStats = { pulled: 0, pushed: 0, conflicts: 0, errors: 0 };
+		this.syncStats = {
+			pulled: 0,
+			pushed: 0,
+			conflicts: 0,
+			errors: 0,
+			attachmentsPulled: 0,
+			attachmentsPushed: 0,
+		};
 		this.onStatusChange({ status: "syncing", stats: this.syncStats });
 
 		try {
-			// Step 1: Pull changes from server
+			// Step 1: Pull document changes from server
 			await this.pullChanges();
 
-			// Step 2: Push local changes
+			// Step 2: Push local document changes
 			await this.pushChanges();
+
+			// Step 3: Sync attachments if enabled
+			if (this.settings.syncAttachments) {
+				await this.pullAttachmentChanges();
+				await this.pushAttachmentChanges();
+			}
 
 			this.settings.lastSync = Date.now();
 			const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
@@ -473,5 +515,264 @@ export class SyncService {
 			console.error("Connection test failed:", error);
 			return false;
 		}
+	}
+
+	// =====================================
+	// Attachment Sync Methods
+	// =====================================
+
+	private async pullAttachmentChanges(): Promise<void> {
+		const url = `${this.settings.serverUrl}/api/attachments/changes?since=${this.settings.lastAttachmentSeq}&limit=100&vault_id=${this.settings.vaultId}`;
+
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
+		}
+
+		const data: AttachmentChangesResponse = await response.json();
+
+		console.log(`Received ${data.results.length} attachment changes from server`);
+
+		const total = data.results.length;
+		let current = 0;
+
+		for (const change of data.results) {
+			current++;
+			this.onStatusChange({
+				status: "syncing",
+				progress: { phase: "pull-attachments", current, total },
+				stats: this.syncStats,
+			});
+
+			try {
+				if (change.deleted) {
+					await this.deleteLocalAttachment(change.path);
+				} else {
+					await this.pullAttachment(change.id, change.path, change.hash);
+				}
+				this.syncStats.attachmentsPulled++;
+			} catch (error) {
+				console.error(`Error processing attachment change for ${change.path}:`, error);
+				this.syncStats.errors++;
+			}
+		}
+
+		// Update last sequence
+		if (data.last_seq > this.settings.lastAttachmentSeq) {
+			this.settings.lastAttachmentSeq = data.last_seq;
+		}
+	}
+
+	private async pullAttachment(id: string, path: string, serverHash: string): Promise<void> {
+		// Check if local file exists with same hash
+		const localMeta = this.attachmentCache.get(path);
+		if (localMeta && localMeta.hash === serverHash) {
+			console.log(`Attachment ${path} is up to date`);
+			return;
+		}
+
+		// Download attachment content
+		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(id)}/content?vault_id=${this.settings.vaultId}`;
+
+		const response = await fetch(url);
+		if (!response.ok) {
+			if (response.status === 404) {
+				console.log(`Attachment ${path} not found on server`);
+				return;
+			}
+			throw new Error(`Failed to fetch attachment: ${response.statusText}`);
+		}
+
+		const data = await response.arrayBuffer();
+		const contentType = response.headers.get("Content-Type") || "application/octet-stream";
+		const hash = response.headers.get("X-Attachment-Hash") || serverHash;
+
+		// Ensure parent folders exist
+		const lastSlashIndex = path.lastIndexOf("/");
+		if (lastSlashIndex !== -1) {
+			const folderPath = path.substring(0, lastSlashIndex);
+			if (folderPath) {
+				const existingFolder = this.vault.getAbstractFileByPath(folderPath);
+				if (!existingFolder) {
+					const segments = folderPath.split("/");
+					let currentPath = "";
+					for (const segment of segments) {
+						if (!segment) continue;
+						currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+						if (!this.vault.getAbstractFileByPath(currentPath)) {
+							await this.vault.createFolder(currentPath);
+						}
+					}
+				}
+			}
+		}
+
+		// Write file
+		const file = this.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) {
+			await this.vault.modifyBinary(file, data);
+			console.log(`Updated attachment ${path}`);
+		} else {
+			await this.vault.createBinary(path, data);
+			console.log(`Created attachment ${path}`);
+		}
+
+		// Update cache
+		this.attachmentCache.set(path, {
+			path,
+			hash,
+			size: data.byteLength,
+			contentType,
+			lastModified: Date.now(),
+		});
+		await this.persistMetadataCache();
+	}
+
+	private async deleteLocalAttachment(path: string): Promise<void> {
+		const file = this.vault.getAbstractFileByPath(path);
+
+		if (file instanceof TFile) {
+			await this.vault.delete(file);
+			this.attachmentCache.delete(path);
+			await this.persistMetadataCache();
+			console.log(`Deleted attachment ${path}`);
+		}
+	}
+
+	private async pushAttachmentChanges(): Promise<void> {
+		const files = this.vault.getFiles();
+		const attachmentFiles = files.filter((file) => isAttachmentFile(file.path));
+		const currentAttachmentPaths = new Set<string>();
+
+		const attachmentsToUpload: TFile[] = [];
+
+		// Check for new or modified attachments
+		for (const file of attachmentFiles) {
+			currentAttachmentPaths.add(file.path);
+			const metadata = this.attachmentCache.get(file.path);
+			const fileModTime = file.stat.mtime;
+
+			// Check if file has been modified since last sync
+			if (!metadata || fileModTime > metadata.lastModified) {
+				attachmentsToUpload.push(file);
+			}
+		}
+
+		// Check for deleted attachments
+		const deletedAttachments: string[] = [];
+		for (const [path] of this.attachmentCache.entries()) {
+			if (isAttachmentFile(path) && !currentAttachmentPaths.has(path)) {
+				deletedAttachments.push(path);
+			}
+		}
+
+		const total = attachmentsToUpload.length + deletedAttachments.length;
+		if (total === 0) {
+			console.log("No attachment changes to push");
+			return;
+		}
+
+		console.log(`Pushing ${attachmentsToUpload.length} attachments, deleting ${deletedAttachments.length}`);
+
+		let current = 0;
+
+		// Upload new/modified attachments
+		for (const file of attachmentsToUpload) {
+			current++;
+			this.onStatusChange({
+				status: "syncing",
+				progress: { phase: "push-attachments", current, total },
+				stats: this.syncStats,
+			});
+
+			try {
+				await this.uploadAttachment(file);
+				this.syncStats.attachmentsPushed++;
+			} catch (error) {
+				console.error(`Failed to upload attachment ${file.path}:`, error);
+				this.syncStats.errors++;
+			}
+		}
+
+		// Delete remote attachments
+		for (const path of deletedAttachments) {
+			current++;
+			this.onStatusChange({
+				status: "syncing",
+				progress: { phase: "push-attachments", current, total },
+				stats: this.syncStats,
+			});
+
+			try {
+				await this.deleteRemoteAttachment(path);
+				this.attachmentCache.delete(path);
+				this.syncStats.attachmentsPushed++;
+			} catch (error) {
+				console.error(`Failed to delete remote attachment ${path}:`, error);
+				this.syncStats.errors++;
+			}
+		}
+
+		await this.persistMetadataCache();
+	}
+
+	private async uploadAttachment(file: TFile): Promise<void> {
+		const data = await this.vault.readBinary(file);
+		const hash = await this.generateHash(data);
+		const contentType = getContentType(file.path);
+
+		// Check if server already has this exact file
+		const metadata = this.attachmentCache.get(file.path);
+		if (metadata && metadata.hash === hash) {
+			console.log(`Attachment ${file.path} unchanged, skipping upload`);
+			return;
+		}
+
+		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(file.path)}?vault_id=${this.settings.vaultId}&hash=${hash}`;
+
+		const response = await fetch(url, {
+			method: "PUT",
+			headers: {
+				"Content-Type": contentType,
+			},
+			body: data,
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to upload attachment: ${response.statusText}`);
+		}
+
+		const result: AttachmentUploadResponse = await response.json();
+
+		if (result.ok) {
+			this.attachmentCache.set(file.path, {
+				path: file.path,
+				hash: result.hash,
+				size: result.size,
+				contentType: result.content_type,
+				lastModified: file.stat.mtime,
+			});
+			console.log(`Uploaded attachment ${file.path}${result.unchanged ? " (unchanged)" : ""}`);
+		}
+	}
+
+	private async deleteRemoteAttachment(path: string): Promise<void> {
+		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(path)}?vault_id=${this.settings.vaultId}`;
+
+		const response = await fetch(url, {
+			method: "DELETE",
+		});
+
+		if (!response.ok && response.status !== 404) {
+			throw new Error(`Failed to delete remote attachment: ${response.statusText}`);
+		}
+
+		console.log(`Deleted remote attachment ${path}`);
+	}
+
+	private async generateHash(data: ArrayBuffer): Promise<string> {
+		const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+		const hashArray = Array.from(new Uint8Array(hashBuffer));
+		return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 	}
 }

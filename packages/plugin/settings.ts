@@ -70,6 +70,17 @@ export class SyncSettingsTab extends PluginSettingTab {
 				}),
 			);
 
+		// Sync attachments toggle
+		new Setting(containerEl)
+			.setName("Sync attachments")
+			.setDesc("Sync binary files like images, PDFs, and other attachments (requires R2 storage)")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.syncAttachments).onChange(async (value) => {
+					this.plugin.settings.syncAttachments = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
 		// Sync interval
 		const intervalOptions: Record<string, number> = {
 			"15 seconds": 15,

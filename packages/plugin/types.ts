@@ -3,9 +3,12 @@ export interface SyncSettings {
 	vaultId: string;
 	syncInterval: number; // in seconds
 	autoSync: boolean;
+	syncAttachments: boolean; // sync binary files (images, PDFs, etc.)
 	lastSync: number; // timestamp
 	lastSeq: number; // last sequence number from changes feed
+	lastAttachmentSeq: number; // last sequence number from attachment changes feed
 	metadataCache: Record<string, DocMetadata>; // persistent metadata cache
+	attachmentCache: Record<string, AttachmentMetadata>; // persistent attachment cache
 }
 
 export const DEFAULT_SETTINGS: SyncSettings = {
@@ -13,9 +16,12 @@ export const DEFAULT_SETTINGS: SyncSettings = {
 	vaultId: "default",
 	syncInterval: 30, // 30 seconds default
 	autoSync: true,
+	syncAttachments: true, // sync attachments by default
 	lastSync: 0,
 	lastSeq: 0,
+	lastAttachmentSeq: 0,
 	metadataCache: {},
+	attachmentCache: {},
 };
 
 // API response types
@@ -71,4 +77,112 @@ export interface DocMetadata {
 	rev: string;
 	lastModified: number;
 	baseContent?: string; // Content at last successful sync (for 3-way merge)
+}
+
+// Attachment types
+export interface AttachmentMetadata {
+	path: string;
+	hash: string;
+	size: number;
+	contentType: string;
+	lastModified: number;
+}
+
+export interface AttachmentChangeResult {
+	seq: number;
+	id: string;
+	path: string;
+	hash: string;
+	deleted?: boolean;
+}
+
+export interface AttachmentChangesResponse {
+	results: AttachmentChangeResult[];
+	last_seq: number;
+}
+
+export interface AttachmentUploadResponse {
+	ok: boolean;
+	id: string;
+	path: string;
+	hash: string;
+	size: number;
+	content_type: string;
+	unchanged?: boolean;
+}
+
+// Common image and binary file extensions
+export const ATTACHMENT_EXTENSIONS = [
+	// Images
+	".png",
+	".jpg",
+	".jpeg",
+	".gif",
+	".bmp",
+	".svg",
+	".webp",
+	".ico",
+	".avif",
+	// Documents
+	".pdf",
+	// Audio
+	".mp3",
+	".wav",
+	".ogg",
+	".m4a",
+	".flac",
+	// Video
+	".mp4",
+	".webm",
+	".mov",
+	".avi",
+	// Archives
+	".zip",
+	".tar",
+	".gz",
+	".7z",
+	// Other
+	".ttf",
+	".otf",
+	".woff",
+	".woff2",
+];
+
+export function isAttachmentFile(path: string): boolean {
+	const lowerPath = path.toLowerCase();
+	return ATTACHMENT_EXTENSIONS.some((ext) => lowerPath.endsWith(ext));
+}
+
+export function getContentType(path: string): string {
+	const ext = path.toLowerCase().split(".").pop() || "";
+	const contentTypes: Record<string, string> = {
+		png: "image/png",
+		jpg: "image/jpeg",
+		jpeg: "image/jpeg",
+		gif: "image/gif",
+		bmp: "image/bmp",
+		svg: "image/svg+xml",
+		webp: "image/webp",
+		ico: "image/x-icon",
+		avif: "image/avif",
+		pdf: "application/pdf",
+		mp3: "audio/mpeg",
+		wav: "audio/wav",
+		ogg: "audio/ogg",
+		m4a: "audio/mp4",
+		flac: "audio/flac",
+		mp4: "video/mp4",
+		webm: "video/webm",
+		mov: "video/quicktime",
+		avi: "video/x-msvideo",
+		zip: "application/zip",
+		tar: "application/x-tar",
+		gz: "application/gzip",
+		"7z": "application/x-7z-compressed",
+		ttf: "font/ttf",
+		otf: "font/otf",
+		woff: "font/woff",
+		woff2: "font/woff2",
+	};
+	return contentTypes[ext] || "application/octet-stream";
 }
