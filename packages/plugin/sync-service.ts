@@ -258,9 +258,22 @@ export class SyncService {
 				const file = this.vault.getAbstractFileByPath(path);
 
 				if (result.merged) {
-					// Automatic merge was performed, pull the merged content
-					new Notice(`ファイル ${path} が自動的にマージされました`);
-					await this.pullDocument(result.id);
+					// Automatic merge was performed
+					// Update metadata BEFORE pulling to prevent race conditions
+					this.metadataCache.set(path, {
+						path,
+						rev: result.rev,
+						lastModified: Date.now(),
+						baseContent: undefined, // Will be set after pull completes
+					});
+
+					try {
+						await this.pullDocument(result.id);
+						new Notice(`File automatically merged: ${path}`);
+					} catch (error) {
+						console.error(`Failed to pull merged content for ${path}:`, error);
+						new Notice(`Merge succeeded but failed to pull: ${path}`, 5000);
+					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with current content as base
 					const content = await this.vault.read(file);
@@ -279,7 +292,7 @@ export class SyncService {
 				await this.handleConflict(result);
 			} else if (result.error) {
 				console.error(`Failed to update ${result.id}: ${result.error}`);
-				new Notice(`同期エラー: ${result.id} - ${result.reason || result.error}`);
+				new Notice(`Sync error: ${result.id} - ${result.reason || result.error}`, 5000);
 			}
 		}
 		await this.persistMetadataCache();
@@ -305,23 +318,33 @@ export class SyncService {
 
 		if (resolution === ConflictResolution.UseLocal) {
 			// Force push local version
-			new Notice(`ローカル版を使用: ${path}`);
-			const content = await this.vault.read(file);
-			await this.forcePushDocument(result.id, content, result.current_rev);
+			try {
+				const content = await this.vault.read(file);
+				await this.forcePushDocument(result.id, content, result.current_rev);
+				new Notice(`Using local version: ${path}`);
+			} catch (error) {
+				console.error(`Failed to force push ${path}:`, error);
+				new Notice(`Failed to sync local version: ${path} - ${error.message}`, 5000);
+			}
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version
-			new Notice(`リモート版を使用: ${path}`);
-			await this.vault.modify(file, remoteContent);
-			this.metadataCache.set(path, {
-				path,
-				rev: result.current_rev || "",
-				lastModified: file.stat.mtime,
-				baseContent: remoteContent,
-			});
-			await this.persistMetadataCache();
+			try {
+				await this.vault.modify(file, remoteContent);
+				this.metadataCache.set(path, {
+					path,
+					rev: result.current_rev || "",
+					lastModified: file.stat.mtime,
+					baseContent: remoteContent,
+				});
+				await this.persistMetadataCache();
+				new Notice(`Using remote version: ${path}`);
+			} catch (error) {
+				console.error(`Failed to apply remote version ${path}:`, error);
+				new Notice(`Failed to apply remote version: ${path} - ${error.message}`, 5000);
+			}
 		} else {
 			// Cancel - keep local but don't sync
-			new Notice(`同期をキャンセル: ${path}`);
+			new Notice(`Sync cancelled: ${path}`);
 		}
 	}
 
