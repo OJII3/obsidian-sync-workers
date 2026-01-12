@@ -9,11 +9,24 @@ import type {
 	SyncSettings,
 } from "./types";
 
-export type SyncStatus =
-	| { status: "idle" }
-	| { status: "syncing" }
-	| { status: "success"; duration?: string }
-	| { status: "error"; message?: string };
+export type SyncStatusType = "idle" | "syncing" | "success" | "error" | "paused";
+
+export interface SyncStatus {
+	status: SyncStatusType;
+	message?: string;
+	duration?: string;
+	progress?: {
+		phase: "pull" | "push";
+		current: number;
+		total: number;
+	};
+	stats?: {
+		pulled: number;
+		pushed: number;
+		conflicts: number;
+		errors: number;
+	};
+}
 
 export class SyncService {
 	private app: App;
@@ -23,6 +36,7 @@ export class SyncService {
 	private metadataCache: Map<string, DocMetadata> = new Map();
 	private saveSettings: () => Promise<void>;
 	private onStatusChange: (status: SyncStatus) => void;
+	private syncStats = { pulled: 0, pushed: 0, conflicts: 0, errors: 0 };
 
 	constructor(
 		app: App,
@@ -67,7 +81,9 @@ export class SyncService {
 
 		this.syncInProgress = true;
 		const startTime = Date.now();
-		this.onStatusChange({ status: "syncing" });
+		// Reset stats for this sync
+		this.syncStats = { pulled: 0, pushed: 0, conflicts: 0, errors: 0 };
+		this.onStatusChange({ status: "syncing", stats: this.syncStats });
 
 		try {
 			// Step 1: Pull changes from server
@@ -78,7 +94,11 @@ export class SyncService {
 
 			this.settings.lastSync = Date.now();
 			const duration = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-			this.onStatusChange({ status: "success", duration });
+			this.onStatusChange({
+				status: "success",
+				duration,
+				stats: this.syncStats,
+			});
 		} catch (error) {
 			console.error("Sync error:", error);
 			const message =
@@ -87,7 +107,12 @@ export class SyncService {
 					: error !== null && error !== undefined
 						? String(error)
 						: "Unknown error";
-			this.onStatusChange({ status: "error", message });
+			this.syncStats.errors++;
+			this.onStatusChange({
+				status: "error",
+				message,
+				stats: this.syncStats,
+			});
 		} finally {
 			this.syncInProgress = false;
 		}
@@ -105,15 +130,27 @@ export class SyncService {
 
 		console.log(`Received ${data.results.length} changes from server`);
 
+		const total = data.results.length;
+		let current = 0;
+
 		for (const change of data.results) {
+			current++;
+			this.onStatusChange({
+				status: "syncing",
+				progress: { phase: "pull", current, total },
+				stats: this.syncStats,
+			});
+
 			try {
 				if (change.deleted) {
 					await this.deleteLocalFile(change.id);
 				} else {
 					await this.pullDocument(change.id);
 				}
+				this.syncStats.pulled++;
 			} catch (error) {
 				console.error(`Error processing change for ${change.id}:`, error);
+				this.syncStats.errors++;
 			}
 		}
 
@@ -244,7 +281,15 @@ export class SyncService {
 			return;
 		}
 
-		console.log(`Pushing ${docsToUpdate.length} documents to server`);
+		const total = docsToUpdate.length;
+		console.log(`Pushing ${total} documents to server`);
+
+		// Update status with push phase
+		this.onStatusChange({
+			status: "syncing",
+			progress: { phase: "push", current: 0, total },
+			stats: this.syncStats,
+		});
 
 		// Use bulk docs endpoint for efficiency
 		const url = `${this.settings.serverUrl}/api/docs/bulk_docs?vault_id=${this.settings.vaultId}`;
@@ -266,7 +311,15 @@ export class SyncService {
 		const results: BulkDocsResponse[] = await response.json();
 
 		// Update metadata cache with new revisions and handle conflicts
+		let current = 0;
 		for (const result of results) {
+			current++;
+			this.onStatusChange({
+				status: "syncing",
+				progress: { phase: "push", current, total },
+				stats: this.syncStats,
+			});
+
 			if (result.ok && result.rev) {
 				const path = this.docIdToPath(result.id);
 				const file = this.vault.getAbstractFileByPath(path);
@@ -277,9 +330,10 @@ export class SyncService {
 					try {
 						await this.pullDocument(result.id);
 						console.log(`File automatically merged: ${path}`);
+						this.syncStats.pushed++;
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
-						// Don't update metadata if pull failed
+						this.syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with current content as base
@@ -290,15 +344,19 @@ export class SyncService {
 						lastModified: file.stat.mtime,
 						baseContent: content,
 					});
+					this.syncStats.pushed++;
 				} else {
 					// File doesn't exist (was deleted), remove from cache
 					this.metadataCache.delete(path);
+					this.syncStats.pushed++;
 				}
 			} else if (result.error === "conflict") {
 				// Conflict detected - handle with user choice
+				this.syncStats.conflicts++;
 				await this.handleConflict(result);
 			} else if (result.error) {
 				console.error(`Failed to update ${result.id}: ${result.error} - ${result.reason || ""}`);
+				this.syncStats.errors++;
 			}
 		}
 		await this.persistMetadataCache();
