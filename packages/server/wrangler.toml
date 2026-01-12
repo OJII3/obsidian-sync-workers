@@ -3,15 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2025-06-01"
 # Account ID は GitHub Actions の CLOUDFLARE_ACCOUNT_ID シークレットから設定されます
 
-# D1データベースのバインディング
-# 実際のdatabase_idを設定するまでコメントアウトしています
-# D1データベースを作成した後、以下の設定を有効化してください:
-# 1. wrangler d1 create obsidian-sync を実行
-# 2. 出力されたdatabase_idを下記に設定
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "obsidian-sync"
-# database_id = "YOUR_DATABASE_ID_HERE"
+[[d1_databases]]
+binding = "DB"
+database_name = "obsidian-sync"
+database_id = "03a36520-e138-408c-90d1-eac8a81ca23e"
 
 [vars]
 # Environment variables (set API_KEY in production)
