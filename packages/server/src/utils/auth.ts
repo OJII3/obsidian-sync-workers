@@ -1,32 +1,42 @@
-import type { Context } from "hono";
 import type { Env } from "../types";
 
 /**
- * Simple API key authentication middleware
- * Checks for API key in Authorization header or query parameter
+ * Simple API key authentication middleware for Elysia
+ * Checks for API key in Authorization header only
+ * Query parameter API keys are NOT allowed for security reasons
  */
-export function requireAuth(c: Context<{ Bindings: Env }>): Response | undefined {
-	const apiKey = c.env.API_KEY;
+export function requireAuth(context: { request: Request; set: any; env?: Env }): boolean {
+	const { request, set, env } = context;
+
+	if (!env) {
+		set.status = 500;
+		return false;
+	}
+
+	const apiKey = env.API_KEY;
 
 	// If no API key is configured, allow all requests
 	if (!apiKey) {
-		return;
+		return true;
 	}
 
-	// Check Authorization header
-	const authHeader = c.req.header("Authorization");
+	// Check Authorization header only
+	const authHeader = request.headers.get("Authorization");
 	if (authHeader) {
 		const token = authHeader.replace("Bearer ", "");
 		if (token === apiKey) {
-			return;
+			return true;
 		}
 	}
 
-	// Check query parameter
-	const queryKey = c.req.query("api_key");
-	if (queryKey === apiKey) {
-		return;
-	}
+	// Unauthorized
+	set.status = 401;
+	return false;
+}
 
-	return c.json({ error: "Unauthorized" }, 401);
+/**
+ * Helper to create an auth error response
+ */
+export function authErrorResponse() {
+	return { error: "Unauthorized", message: "Valid API key required in Authorization header" };
 }

@@ -4,16 +4,132 @@ import { Env, ChangesResponse } from "./types";
 import { Database } from "./db/queries";
 import { generateRevision } from "./utils/revision";
 import { threeWayMerge } from "./utils/merge";
+import { requireAuth, authErrorResponse } from "./utils/auth";
 import type { DocumentInput, BulkDocsRequest } from "./types";
 
+/**
+ * Shared bulk docs handler to avoid code duplication
+ */
+async function handleBulkDocs(request: BulkDocsRequest, vaultId: string) {
+	if (!request.docs || !Array.isArray(request.docs)) {
+		return { error: "Invalid request: docs array required", status: 400 };
+	}
+
+	const db = new Database(env.DB);
+	const results = [];
+
+	for (const doc of request.docs) {
+		try {
+			const existing = await db.getDocument(doc._id, vaultId);
+			let newRev: string;
+			let finalContent = doc.content || null;
+
+			if (existing) {
+				// Check revision if provided
+				if (doc._rev && doc._rev !== existing.rev) {
+					// Revision conflict detected
+					// Try three-way merge if base content is provided
+					if (doc._base_content && doc.content && existing.content) {
+						const mergeResult = threeWayMerge(doc._base_content, existing.content, doc.content);
+
+						if (mergeResult.success && mergeResult.content) {
+							// Merge succeeded, use merged content
+							finalContent = mergeResult.content;
+							newRev = generateRevision(existing.rev);
+
+							await db.upsertDocument({
+								id: doc._id,
+								vaultId,
+								content: finalContent,
+								rev: newRev,
+								deleted: doc._deleted ? 1 : 0,
+							});
+
+							results.push({
+								ok: true,
+								id: doc._id,
+								rev: newRev,
+								merged: true,
+							});
+							continue;
+						} else {
+							// Merge failed, return conflict with both versions
+							results.push({
+								id: doc._id,
+								error: "conflict",
+								reason: "Document update conflict - manual resolution required",
+								current_content: existing.content,
+								current_rev: existing.rev,
+								conflicts: mergeResult.conflicts,
+							});
+							continue;
+						}
+					} else {
+						// No base content provided, cannot merge
+						results.push({
+							id: doc._id,
+							error: "conflict",
+							reason: "Document update conflict",
+							current_content: existing.content,
+							current_rev: existing.rev,
+						});
+						continue;
+					}
+				}
+				newRev = generateRevision(existing.rev);
+			} else {
+				newRev = generateRevision();
+			}
+
+			await db.upsertDocument({
+				id: doc._id,
+				vaultId,
+				content: finalContent,
+				rev: newRev,
+				deleted: doc._deleted ? 1 : 0,
+			});
+
+			results.push({
+				ok: true,
+				id: doc._id,
+				rev: newRev,
+			});
+		} catch (e) {
+			results.push({
+				id: doc._id,
+				error: "internal_error",
+				reason: (e as Error).message,
+			});
+		}
+	}
+
+	return results;
+}
+
 const app = new Elysia({ aot: false })
-	// CORS middleware
+	// CORS middleware - configurable via CORS_ORIGIN env var
 	.onRequest(({ set }) => {
+		const allowedOrigin = env.CORS_ORIGIN || "*";
 		set.headers = {
-			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Origin": allowedOrigin,
 			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 			"Access-Control-Allow-Headers": "Content-Type, Authorization",
 		};
+	})
+	// Authentication middleware - applies to all /api/* routes
+	.onBeforeHandle(({ request, set, path }) => {
+		// Skip auth for health check endpoint and OPTIONS requests
+		if (path === "/" || request.method === "OPTIONS") {
+			return;
+		}
+
+		// Apply auth to all API routes
+		if (path.startsWith("/api")) {
+			const isAuthorized = requireAuth({ request, set, env });
+			if (!isAuthorized) {
+				return authErrorResponse();
+			}
+		}
 	})
 	// Handle OPTIONS requests for CORS preflight
 	.options("/*", () => {
@@ -178,218 +294,14 @@ const app = new Elysia({ aot: false })
 			.post("/bulk_docs", async ({ query, body }) => {
 				const vaultId = query.vault_id || "default";
 				const request = body as BulkDocsRequest;
-
-				if (!request.docs || !Array.isArray(request.docs)) {
-					return { error: "Invalid request: docs array required", status: 400 };
-				}
-
-				const db = new Database(env.DB);
-				const results = [];
-
-				for (const doc of request.docs) {
-					try {
-						const existing = await db.getDocument(doc._id, vaultId);
-						let newRev: string;
-						let finalContent = doc.content || null;
-
-						if (existing) {
-							// Check revision if provided
-							if (doc._rev && doc._rev !== existing.rev) {
-								// Revision conflict detected
-								// Try three-way merge if base content is provided
-								if (doc._base_content && doc.content && existing.content) {
-									const mergeResult = threeWayMerge(
-										doc._base_content,
-										existing.content,
-										doc.content,
-									);
-
-									if (mergeResult.success && mergeResult.content) {
-										// Merge succeeded, use merged content
-										finalContent = mergeResult.content;
-										newRev = generateRevision(existing.rev);
-
-										await db.upsertDocument({
-											id: doc._id,
-											vaultId,
-											content: finalContent,
-											rev: newRev,
-											deleted: doc._deleted ? 1 : 0,
-										});
-
-										results.push({
-											ok: true,
-											id: doc._id,
-											rev: newRev,
-											merged: true,
-										});
-										continue;
-									} else {
-										// Merge failed, return conflict with both versions
-										results.push({
-											id: doc._id,
-											error: "conflict",
-											reason: "Document update conflict - manual resolution required",
-											current_content: existing.content,
-											current_rev: existing.rev,
-											conflicts: mergeResult.conflicts,
-										});
-										continue;
-									}
-								} else {
-									// No base content provided, cannot merge
-									results.push({
-										id: doc._id,
-										error: "conflict",
-										reason: "Document update conflict",
-										current_content: existing.content,
-										current_rev: existing.rev,
-									});
-									continue;
-								}
-							}
-							newRev = generateRevision(existing.rev);
-						} else {
-							newRev = generateRevision();
-						}
-
-						await db.upsertDocument({
-							id: doc._id,
-							vaultId,
-							content: finalContent,
-							rev: newRev,
-							deleted: doc._deleted ? 1 : 0,
-						});
-
-						results.push({
-							ok: true,
-							id: doc._id,
-							rev: newRev,
-						});
-					} catch (e) {
-						results.push({
-							id: doc._id,
-							error: "internal_error",
-							reason: (e as Error).message,
-						});
-					}
-				}
-
-				return results;
+				return handleBulkDocs(request, vaultId);
 			}),
 	)
 	// Alternative bulk docs path
 	.post("/api/_bulk_docs", async ({ query, body }) => {
 		const vaultId = query.vault_id || "default";
 		const request = body as BulkDocsRequest;
-
-		if (!request.docs || !Array.isArray(request.docs)) {
-			return { error: "Invalid request: docs array required", status: 400 };
-		}
-
-		const db = new Database(env.DB);
-		const results = [];
-
-		for (const doc of request.docs) {
-			try {
-				const existing = await db.getDocument(doc._id, vaultId);
-				let newRev: string;
-				let finalContent = doc.content || null;
-
-				if (existing) {
-					// Check revision if provided
-					if (doc._rev && doc._rev !== existing.rev) {
-						// Revision conflict detected
-						// Try three-way merge if base content is provided
-						if (doc._base_content && doc.content && existing.content) {
-							const mergeResult = threeWayMerge(doc._base_content, existing.content, doc.content);
-
-							if (mergeResult.success && mergeResult.content) {
-								// Merge succeeded, use merged content
-								finalContent = mergeResult.content;
-								newRev = generateRevision(existing.rev);
-
-								await db.upsertDocument({
-									id: doc._id,
-									vaultId,
-									content: finalContent,
-									rev: newRev,
-									deleted: doc._deleted ? 1 : 0,
-								});
-
-								results.push({
-									ok: true,
-									id: doc._id,
-									rev: newRev,
-									merged: true,
-								});
-								continue;
-							} else {
-								// Merge failed, return conflict with both versions
-								results.push({
-									id: doc._id,
-									error: "conflict",
-									reason: "Document update conflict - manual resolution required",
-									current_content: existing.content,
-									current_rev: existing.rev,
-									conflicts: mergeResult.conflicts,
-								});
-								continue;
-							}
-						} else {
-							// No base content provided, cannot merge
-							results.push({
-								id: doc._id,
-								error: "conflict",
-								reason: "Document update conflict",
-								current_content: existing.content,
-								current_rev: existing.rev,
-							});
-							continue;
-						}
-					}
-					newRev = generateRevision(existing.rev);
-				} else {
-					newRev = generateRevision();
-				}
-
-				await db.upsertDocument({
-					id: doc._id,
-					vaultId,
-					content: finalContent,
-					rev: newRev,
-					deleted: doc._deleted ? 1 : 0,
-				});
-
-				results.push({
-					ok: true,
-					id: doc._id,
-					rev: newRev,
-				});
-			} catch (e) {
-				results.push({
-					id: doc._id,
-					error: "internal_error",
-					reason: (e as Error).message,
-				});
-			}
-		}
-
-		return results;
-	})
-	// Debug endpoint: list all documents
-	.get("/api/debug/docs", async ({ query }) => {
-		const vaultId = query.vault_id || "default";
-		const limit = parseInt(query.limit || "100", 10);
-
-		const db = new Database(env.DB);
-		const docs = await db.getAllDocuments(vaultId, limit);
-
-		return {
-			vault_id: vaultId,
-			count: docs.length,
-			documents: docs,
-		};
+		return handleBulkDocs(request, vaultId);
 	})
 	// 404 handler
 	.onError(({ code, error, set }) => {
