@@ -1,28 +1,28 @@
 {
-  "name": "obsidian-sync-workers",
-  "version": "0.1.0",
-  "description": "Simple Obsidian sync server using Cloudflare Workers and D1",
-  "main": "src/index.ts",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 execute obsidian-sync --file=./src/db/schema.sql",
-    "db:local": "wrangler d1 execute obsidian-sync --local --file=./src/db/schema.sql"
-  },
-  "keywords": [
-    "obsidian",
-    "sync",
-    "cloudflare-workers",
-    "d1"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "elysia": "^1.4.7"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240925.0",
-    "typescript": "^5.6.3",
-    "wrangler": "4"
-  }
+	"name": "obsidian-sync-workers",
+	"version": "0.1.0",
+	"description": "Simple Obsidian sync server using Cloudflare Workers and D1",
+	"main": "src/index.ts",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"db:init": "wrangler d1 execute obsidian-sync --file=./src/db/schema.sql",
+		"db:local": "wrangler d1 execute obsidian-sync --local --file=./src/db/schema.sql"
+	},
+	"keywords": [
+		"obsidian",
+		"sync",
+		"cloudflare-workers",
+		"d1"
+	],
+	"author": "",
+	"license": "MIT",
+	"dependencies": {
+		"elysia": "^1.4.7"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20240925.0",
+		"typescript": "^5.6.3",
+		"wrangler": "4"
+	}
 }
