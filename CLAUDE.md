@@ -53,6 +53,28 @@ bun run build:plugin      # プラグインビルド
 
 ### デプロイ
 
+#### 初回デプロイ前の準備
+
+⚠️ **重要**: 初回デプロイ前に、以下の手順でD1データベースをセットアップしてください：
+
+1. **D1データベースの作成**
+   ```bash
+   cd packages/server
+   wrangler d1 create obsidian-sync
+   ```
+
+2. **database_idの設定**
+   - 上記コマンドの出力からdatabase_idをコピー
+   - `packages/server/wrangler.toml`のコメントアウトされたD1設定を有効化
+   - `database_id`を実際の値に置き換え
+
+3. **テーブルの作成**
+   ```bash
+   wrangler d1 execute obsidian-sync --file=./schema.sql
+   ```
+
+#### デプロイ方法
+
 - **自動**: mainブランチへのpushで自動デプロイ（GitHub Actions）
 - **手動**: `bun run deploy` (packages/server)
 
