@@ -1,11 +1,15 @@
-import { Elysia } from "elysia";
 import { env } from "cloudflare:workers";
-import { Env, ChangesResponse, AttachmentChangesResponse } from "./types";
+import { Elysia } from "elysia";
 import { Database } from "./db/queries";
-import { generateRevision } from "./utils/revision";
+import type {
+	AttachmentChangesResponse,
+	BulkDocsRequest,
+	ChangesResponse,
+	DocumentInput,
+} from "./types";
+import { authErrorResponse, requireAuth } from "./utils/auth";
 import { threeWayMerge } from "./utils/merge";
-import { requireAuth, authErrorResponse } from "./utils/auth";
-import type { DocumentInput, BulkDocsRequest } from "./types";
+import { generateRevision } from "./utils/revision";
 
 /**
  * Generate SHA-256 hash from ArrayBuffer
@@ -14,6 +18,46 @@ async function generateHash(data: ArrayBuffer): Promise<string> {
 	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
 	const hashArray = Array.from(new Uint8Array(hashBuffer));
 	return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Validate attachment path to prevent directory traversal attacks
+ */
+function validateAttachmentPath(path: string): boolean {
+	// Reject empty paths
+	if (!path || path.trim() === "") {
+		return false;
+	}
+
+	// Reject absolute paths
+	if (path.startsWith("/") || path.startsWith("\\")) {
+		return false;
+	}
+
+	// Reject paths containing ".." (directory traversal)
+	if (path.includes("..")) {
+		return false;
+	}
+
+	// Reject paths containing null bytes
+	if (path.includes("\0")) {
+		return false;
+	}
+
+	// Reject paths with suspicious patterns
+	const suspiciousPatterns = [
+		/^\.\./, // starts with ..
+		/\/\.\./, // contains /..
+		/\\\.\./, // contains \..
+	];
+
+	for (const pattern of suspiciousPatterns) {
+		if (pattern.test(path)) {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /**
@@ -173,14 +217,14 @@ const app = new Elysia({ aot: false })
 				const vaultId = query.vault_id || "default";
 
 				// Validate parameters
-				if (isNaN(since) || since < 0) {
+				if (Number.isNaN(since) || since < 0) {
 					return {
 						error: "Invalid since parameter",
 						status: 400,
 					};
 				}
 
-				if (isNaN(limit) || limit < 1 || limit > 1000) {
+				if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
 					return {
 						error: "Invalid limit parameter (1-1000)",
 						status: 400,
@@ -335,11 +379,11 @@ const app = new Elysia({ aot: false })
 				const limit = parseInt(query.limit || "100", 10);
 				const vaultId = query.vault_id || "default";
 
-				if (isNaN(since) || since < 0) {
+				if (Number.isNaN(since) || since < 0) {
 					return { error: "Invalid since parameter", status: 400 };
 				}
 
-				if (isNaN(limit) || limit < 1 || limit > 1000) {
+				if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
 					return { error: "Invalid limit parameter (1-1000)", status: 400 };
 				}
 
@@ -417,14 +461,14 @@ const app = new Elysia({ aot: false })
 				// Return binary content
 				set.headers = {
 					"Content-Type": attachment.content_type,
-					"Content-Length": attachment.size.toString(),
+					"Content-Length": object.size.toString(),
 					"X-Attachment-Hash": attachment.hash,
 				};
 
 				return new Response(object.body, {
 					headers: {
 						"Content-Type": attachment.content_type,
-						"Content-Length": attachment.size.toString(),
+						"Content-Length": object.size.toString(),
 						"X-Attachment-Hash": attachment.hash,
 					},
 				});
@@ -434,6 +478,14 @@ const app = new Elysia({ aot: false })
 				const path = decodeURIComponent(params.path);
 				const vaultId = query.vault_id || "default";
 				const clientHash = query.hash;
+
+				// Validate path to prevent directory traversal attacks
+				if (!validateAttachmentPath(path)) {
+					set.status = 400;
+					return {
+						error: "Invalid path: must be relative and not contain directory traversal patterns",
+					};
+				}
 
 				// Get content type from header
 				const contentType = request.headers.get("Content-Type") || "application/octet-stream";
@@ -511,6 +563,14 @@ const app = new Elysia({ aot: false })
 			.delete("/:path", async ({ params, query, set }) => {
 				const path = decodeURIComponent(params.path);
 				const vaultId = query.vault_id || "default";
+
+				// Validate path to prevent directory traversal attacks
+				if (!validateAttachmentPath(path)) {
+					set.status = 400;
+					return {
+						error: "Invalid path: must be relative and not contain directory traversal patterns",
+					};
+				}
 
 				const db = new Database(env.DB);
 				const id = generateAttachmentId(vaultId, path);
