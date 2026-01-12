@@ -273,19 +273,13 @@ export class SyncService {
 
 				if (result.merged) {
 					// Automatic merge was performed
-					// Update metadata BEFORE pulling to prevent race conditions
-					this.metadataCache.set(path, {
-						path,
-						rev: result.rev,
-						lastModified: Date.now(),
-						baseContent: undefined, // Will be set after pull completes
-					});
-
+					// Pull the merged content first to avoid race conditions
 					try {
 						await this.pullDocument(result.id);
 						console.log(`File automatically merged: ${path}`);
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
+						// Don't update metadata if pull failed
 					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with current content as base
