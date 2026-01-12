@@ -10,7 +10,7 @@ Obsidian同期システム（Cloudflare Workers + D1 + Obsidianプラグイン�
 
 - **ランタイム**: Bun (latest)
 - **パッケージマネージャー**: Bun workspaces
-- **サーバー**: Cloudflare Workers + D1 (SQLite)
+- **サーバー**: Cloudflare Workers + D1 (SQLite) + R2 (Object Storage)
 - **フレームワーク**: Elysia
 - **プラグイン**: TypeScript + Obsidian API
 - **CI/CD**: GitHub Actions
@@ -78,8 +78,14 @@ bun run build:plugin      # プラグインビルド
 
 3. **テーブルの作成**
    ```bash
-   wrangler d1 execute obsidian-sync --file=./schema.sql
+   wrangler d1 execute obsidian-sync --file=./src/db/schema.sql
    ```
+
+4. **R2バケットの作成（アタッチメント同期用）**
+   ```bash
+   wrangler r2 bucket create obsidian-attachments
+   ```
+   - `packages/server/wrangler.toml`にR2バインディングが設定済み
 
 #### デプロイ方法
 
@@ -118,6 +124,8 @@ bun run build:plugin      # プラグインビルド
 - ✅ 論理削除
 - ✅ 一括ドキュメント操作
 - ✅ マルチVault対応
+- ✅ **R2によるアタッチメント（画像・バイナリファイル）保存**
+- ✅ **アタッチメント変更フィード**
 
 ### プラグイン (packages/plugin)
 
@@ -130,14 +138,16 @@ bun run build:plugin      # プラグインビルド
 - ✅ 自動同期（設定可能な間隔）
 - ✅ 設定UI（URL検証付き）
 - ✅ エラーハンドリング
+- ✅ **アタッチメント同期（画像、PDF、音声、動画等）**
+- ✅ **SHA-256ハッシュによる重複検出**
 
 ## 未実装機能・制限事項
 
 以下の機能は現在実装されていません：
 
-1. **アタッチメント/バイナリファイル対応**
-   - 画像、PDF等のファイル同期
-   - 大きな課題：D1のストレージ制限
+1. **~~アタッチメント/バイナリファイル対応~~** ✅ 実装済み
+   - ✅ 画像、PDF等のファイル同期（R2使用）
+   - ✅ SHA-256ハッシュによる重複防止
 
 2. **WebSocketによるリアルタイム通知**
    - 現在はポーリングベースの同期
@@ -225,8 +235,8 @@ bun run build:plugin      # プラグインビルド
 
 ### 優先度: 低
 
-1. **アタッチメント対応**
-   - Cloudflare R2との連携を検討
+1. **~~アタッチメント対応~~** ✅ 実装済み
+   - ✅ Cloudflare R2との連携
 
 2. **WebSocketサポート**
    - リアルタイム同期
@@ -293,7 +303,74 @@ bun run build:plugin      # プラグインビルド
 - `packages/plugin/sync-service.ts`: 競合ハンドリングロジック
 - メタデータに`baseContent`を保存して、次回の同期でマージに使用
 
+## アタッチメント同期機能の詳細
+
+### R2ストレージ構成
+
+アタッチメント（画像、PDF等のバイナリファイル）はCloudflare R2に保存されます：
+
+- **バケット名**: `obsidian-attachments`
+- **R2キー形式**: `{vaultId}/{sha256hash}/{filepath}`
+- **メタデータ**: D1のattachmentsテーブルに保存
+
+#### 重複排除の動作
+
+R2キーにはファイルパスが含まれているため、**同じコンテンツ（同じSHA-256ハッシュ）でも異なるパスの場合は別々のR2オブジェクトとして保存されます**。これには以下の特徴があります：
+
+- **利点**:
+  - ファイルパスとコンテンツの完全な対応関係を維持
+  - ファイルを移動/リネームした際の履歴追跡が可能
+  - 特定のファイルパスに対する削除操作が明確
+
+- **トレードオフ**:
+  - 同じコンテンツを異なるパスで保存すると、ストレージ容量を消費
+  - 完全なコンテンツベースの重複排除が必要な場合は、R2キー形式の変更を検討
+
+重複排除は同一パス内でのみ機能し、異なるパスには適用されません。これは組織的な目的を優先した設計判断です。
+
+### 対応ファイル形式
+
+- **画像**: PNG, JPG, JPEG, GIF, BMP, SVG, WebP, ICO, AVIF
+- **ドキュメント**: PDF
+- **音声**: MP3, WAV, OGG, M4A, FLAC
+- **動画**: MP4, WebM, MOV, AVI
+- **フォント**: TTF, OTF, WOFF, WOFF2
+- **アーカイブ**: ZIP, TAR, GZ, 7Z
+
+### 同期の仕組み
+
+1. **アップロード時**
+   - ファイルのSHA-256ハッシュを計算
+   - 同じハッシュが既に存在する場合はスキップ（重複防止）
+   - R2にアップロード後、メタデータをD1に保存
+
+2. **ダウンロード時**
+   - attachment_changesフィードから変更を取得
+   - ローカルのハッシュと比較して差分のみダウンロード
+   - 親フォルダを自動作成
+
+3. **削除時**
+   - 論理削除（R2オブジェクトは保持）
+   - 復元可能性を考慮
+
+### APIエンドポイント
+
+- `GET /api/attachments/changes` - アタッチメント変更フィード
+- `GET /api/attachments/:id` - メタデータ取得
+- `GET /api/attachments/:id/content` - コンテンツダウンロード
+- `PUT /api/attachments/:path` - アップロード
+- `DELETE /api/attachments/:path` - 削除
+
+### 技術的な実装詳細
+
+- `packages/server/src/db/schema.sql`: attachments, attachment_changesテーブル
+- `packages/server/src/db/queries.ts`: アタッチメント用クエリメソッド
+- `packages/server/src/index.ts`: R2連携APIエンドポイント
+- `packages/plugin/sync-service.ts`: アタッチメント同期ロジック
+- `packages/plugin/types.ts`: アタッチメント関連の型定義
+
 ## 最終更新
 
+2026-01-12: R2によるアタッチメント（画像・バイナリファイル）同期機能を実装
 2026-01-12: 3-way merge機能と競合解決UIを実装
 2026-01-11: 初版作成（モノレポ構築、PRレビュー対応、GitHub Actions追加、Bun移行完了）

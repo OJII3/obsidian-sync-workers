@@ -1,11 +1,78 @@
-import { Elysia } from "elysia";
 import { env } from "cloudflare:workers";
-import { Env, ChangesResponse } from "./types";
+import { Elysia } from "elysia";
 import { Database } from "./db/queries";
-import { generateRevision } from "./utils/revision";
+import type {
+	AttachmentChangesResponse,
+	BulkDocsRequest,
+	ChangesResponse,
+	DocumentInput,
+} from "./types";
+import { authErrorResponse, requireAuth } from "./utils/auth";
 import { threeWayMerge } from "./utils/merge";
-import { requireAuth, authErrorResponse } from "./utils/auth";
-import type { DocumentInput, BulkDocsRequest } from "./types";
+import { generateRevision } from "./utils/revision";
+
+/**
+ * Generate SHA-256 hash from ArrayBuffer
+ */
+async function generateHash(data: ArrayBuffer): Promise<string> {
+	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+	const hashArray = Array.from(new Uint8Array(hashBuffer));
+	return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Validate attachment path to prevent directory traversal attacks
+ */
+function validateAttachmentPath(path: string): boolean {
+	// Reject empty paths
+	if (!path || path.trim() === "") {
+		return false;
+	}
+
+	// Reject absolute paths
+	if (path.startsWith("/") || path.startsWith("\\")) {
+		return false;
+	}
+
+	// Reject paths containing ".." (directory traversal)
+	if (path.includes("..")) {
+		return false;
+	}
+
+	// Reject paths containing null bytes
+	if (path.includes("\0")) {
+		return false;
+	}
+
+	// Reject paths with suspicious patterns
+	const suspiciousPatterns = [
+		/^\.\./, // starts with ..
+		/\/\.\./, // contains /..
+		/\\\.\./, // contains \..
+	];
+
+	for (const pattern of suspiciousPatterns) {
+		if (pattern.test(path)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Generate attachment ID from vault ID and path
+ */
+function generateAttachmentId(vaultId: string, path: string): string {
+	return `${vaultId}:${path}`;
+}
+
+/**
+ * Generate R2 key for attachment storage
+ */
+function generateR2Key(vaultId: string, path: string, hash: string): string {
+	return `${vaultId}/${hash}/${path}`;
+}
 
 /**
  * Shared bulk docs handler to avoid code duplication
@@ -150,14 +217,14 @@ const app = new Elysia({ aot: false })
 				const vaultId = query.vault_id || "default";
 
 				// Validate parameters
-				if (isNaN(since) || since < 0) {
+				if (Number.isNaN(since) || since < 0) {
 					return {
 						error: "Invalid since parameter",
 						status: 400,
 					};
 				}
 
-				if (isNaN(limit) || limit < 1 || limit > 1000) {
+				if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
 					return {
 						error: "Invalid limit parameter (1-1000)",
 						status: 400,
@@ -303,6 +370,227 @@ const app = new Elysia({ aot: false })
 		const request = body as BulkDocsRequest;
 		return handleBulkDocs(request, vaultId);
 	})
+	// Attachment changes feed
+	.group("/api/attachments", (app) =>
+		app
+			// Get attachment changes
+			.get("/changes", async ({ query }) => {
+				const since = parseInt(query.since || "0", 10);
+				const limit = parseInt(query.limit || "100", 10);
+				const vaultId = query.vault_id || "default";
+
+				if (Number.isNaN(since) || since < 0) {
+					return { error: "Invalid since parameter", status: 400 };
+				}
+
+				if (Number.isNaN(limit) || limit < 1 || limit > 1000) {
+					return { error: "Invalid limit parameter (1-1000)", status: 400 };
+				}
+
+				const db = new Database(env.DB);
+				const { changes: changesList, lastSeq } = await db.getAttachmentChanges(
+					vaultId,
+					since,
+					limit,
+				);
+
+				// Get attachment details for each change
+				const results = await Promise.all(
+					changesList.map(async (change) => {
+						const attachment = await db.getAttachment(change.attachment_id, vaultId);
+						return {
+							seq: change.seq,
+							id: change.attachment_id,
+							path: attachment?.path || "",
+							hash: change.hash,
+							deleted: change.deleted === 1 ? true : undefined,
+						};
+					}),
+				);
+
+				const response: AttachmentChangesResponse = {
+					results,
+					last_seq: lastSeq,
+				};
+
+				return response;
+			})
+			// Get attachment metadata by ID
+			.get("/:id", async ({ params, query, set }) => {
+				const id = decodeURIComponent(params.id);
+				const vaultId = query.vault_id || "default";
+
+				const db = new Database(env.DB);
+				const attachment = await db.getAttachment(id, vaultId);
+
+				if (!attachment || attachment.deleted === 1) {
+					set.status = 404;
+					return { error: "Attachment not found" };
+				}
+
+				return {
+					id: attachment.id,
+					path: attachment.path,
+					content_type: attachment.content_type,
+					size: attachment.size,
+					hash: attachment.hash,
+					deleted: attachment.deleted === 1,
+				};
+			})
+			// Download attachment content
+			.get("/:id/content", async ({ params, query, set }) => {
+				const id = decodeURIComponent(params.id);
+				const vaultId = query.vault_id || "default";
+
+				const db = new Database(env.DB);
+				const attachment = await db.getAttachment(id, vaultId);
+
+				if (!attachment || attachment.deleted === 1) {
+					set.status = 404;
+					return { error: "Attachment not found" };
+				}
+
+				// Get from R2
+				const object = await env.ATTACHMENTS.get(attachment.r2_key);
+
+				if (!object) {
+					set.status = 404;
+					return { error: "Attachment content not found in storage" };
+				}
+
+				// Return binary content
+				set.headers = {
+					"Content-Type": attachment.content_type,
+					"Content-Length": object.size.toString(),
+					"X-Attachment-Hash": attachment.hash,
+				};
+
+				return new Response(object.body, {
+					headers: {
+						"Content-Type": attachment.content_type,
+						"Content-Length": object.size.toString(),
+						"X-Attachment-Hash": attachment.hash,
+					},
+				});
+			})
+			// Upload attachment
+			.put("/:path", async ({ params, query, request, set }) => {
+				const path = decodeURIComponent(params.path);
+				const vaultId = query.vault_id || "default";
+				const clientHash = query.hash;
+
+				// Validate path to prevent directory traversal attacks
+				if (!validateAttachmentPath(path)) {
+					set.status = 400;
+					return {
+						error: "Invalid path: must be relative and not contain directory traversal patterns",
+					};
+				}
+
+				// Get content type from header
+				const contentType = request.headers.get("Content-Type") || "application/octet-stream";
+
+				// Read body as ArrayBuffer
+				const data = await request.arrayBuffer();
+				const size = data.byteLength;
+
+				// Generate hash
+				const hash = await generateHash(data);
+
+				// Verify hash if provided
+				if (clientHash && clientHash !== hash) {
+					set.status = 400;
+					return {
+						error: "Hash mismatch",
+						expected: clientHash,
+						actual: hash,
+					};
+				}
+
+				const db = new Database(env.DB);
+				const id = generateAttachmentId(vaultId, path);
+
+				// Check if attachment with same hash already exists
+				const existing = await db.getAttachment(id, vaultId);
+				if (existing && existing.hash === hash && existing.deleted === 0) {
+					// Same content, no need to upload
+					return {
+						ok: true,
+						id,
+						path,
+						hash,
+						size,
+						content_type: contentType,
+						unchanged: true,
+					};
+				}
+
+				// Generate R2 key and upload
+				const r2Key = generateR2Key(vaultId, path, hash);
+				await env.ATTACHMENTS.put(r2Key, data, {
+					httpMetadata: {
+						contentType,
+					},
+					customMetadata: {
+						vaultId,
+						path,
+						hash,
+					},
+				});
+
+				// Save metadata to database
+				await db.upsertAttachment({
+					id,
+					vaultId,
+					path,
+					contentType,
+					size,
+					hash,
+					r2Key,
+					deleted: 0,
+				});
+
+				return {
+					ok: true,
+					id,
+					path,
+					hash,
+					size,
+					content_type: contentType,
+				};
+			})
+			// Delete attachment
+			.delete("/:path", async ({ params, query, set }) => {
+				const path = decodeURIComponent(params.path);
+				const vaultId = query.vault_id || "default";
+
+				// Validate path to prevent directory traversal attacks
+				if (!validateAttachmentPath(path)) {
+					set.status = 400;
+					return {
+						error: "Invalid path: must be relative and not contain directory traversal patterns",
+					};
+				}
+
+				const db = new Database(env.DB);
+				const id = generateAttachmentId(vaultId, path);
+				const existing = await db.getAttachment(id, vaultId);
+
+				if (!existing) {
+					set.status = 404;
+					return { error: "Attachment not found" };
+				}
+
+				// Soft delete (keep R2 object for potential recovery)
+				await db.deleteAttachment(id, vaultId);
+
+				return {
+					ok: true,
+					id,
+					deleted: true,
+				};
+			}),
+	)
 	// 404 handler
 	.onError(({ code, error, set }) => {
 		if (code === "NOT_FOUND") {

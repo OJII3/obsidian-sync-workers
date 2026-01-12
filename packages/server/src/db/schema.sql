@@ -39,3 +39,35 @@ CREATE TABLE IF NOT EXISTS changes (
 
 CREATE INDEX IF NOT EXISTS idx_changes_vault_id ON changes(vault_id);
 CREATE INDEX IF NOT EXISTS idx_changes_seq ON changes(seq);
+
+-- Attachments table: stores metadata for binary files in R2
+CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  vault_id TEXT NOT NULL DEFAULT 'default',
+  path TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  r2_key TEXT NOT NULL,
+  deleted INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_vault_id ON attachments(vault_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_path ON attachments(vault_id, path);
+CREATE INDEX IF NOT EXISTS idx_attachments_hash ON attachments(hash);
+CREATE INDEX IF NOT EXISTS idx_attachments_deleted ON attachments(deleted);
+
+-- Attachment changes feed: tracks the sequence of attachment changes for sync
+CREATE TABLE IF NOT EXISTS attachment_changes (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  attachment_id TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  deleted INTEGER DEFAULT 0,
+  vault_id TEXT NOT NULL DEFAULT 'default',
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachment_changes_vault_id ON attachment_changes(vault_id);
+CREATE INDEX IF NOT EXISTS idx_attachment_changes_seq ON attachment_changes(seq);

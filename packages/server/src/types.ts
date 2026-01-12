@@ -1,5 +1,6 @@
 export interface Env {
 	DB: D1Database;
+	ATTACHMENTS: R2Bucket;
 	API_KEY?: string;
 }
 
@@ -48,6 +49,49 @@ export interface ChangesResponse {
 		seq: number;
 		id: string;
 		changes: Array<{ rev: string }>;
+		deleted?: boolean;
+	}>;
+	last_seq: number;
+}
+
+// Attachment types for R2 storage
+export interface Attachment {
+	id: string;
+	vault_id: string;
+	path: string;
+	content_type: string;
+	size: number;
+	hash: string;
+	r2_key: string;
+	deleted: number;
+	created_at: number;
+	updated_at: number;
+}
+
+export interface AttachmentMetadata {
+	id: string;
+	path: string;
+	content_type: string;
+	size: number;
+	hash: string;
+	deleted?: boolean;
+}
+
+export interface AttachmentChange {
+	seq: number;
+	attachment_id: string;
+	hash: string;
+	deleted: number;
+	vault_id: string;
+	created_at: number;
+}
+
+export interface AttachmentChangesResponse {
+	results: Array<{
+		seq: number;
+		id: string;
+		path: string;
+		hash: string;
 		deleted?: boolean;
 	}>;
 	last_seq: number;

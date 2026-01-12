@@ -8,5 +8,9 @@ binding = "DB"
 database_name = "obsidian-sync"
 database_id = "03a36520-e138-408c-90d1-eac8a81ca23e"
 
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "obsidian-attachments"
+
 [vars]
 # Environment variables (set API_KEY in production)

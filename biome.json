@@ -14,6 +14,7 @@
 			"*.json",
 			"!**/node_modules",
 			"!**/dist",
+			"!**/.direnv",
 			"!**/*.d.ts",
 			"!**/main.js"
 		]

@@ -8,6 +8,10 @@ dist/
 .env.local
 package-lock.json
 
+# direnv
+.direnv/
+.envrc
+
 # Claude settings
 .claude/
 

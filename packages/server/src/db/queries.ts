@@ -1,4 +1,4 @@
-import type { Change, Document, Revision } from "../types";
+import type { Change, Document, Revision, Attachment, AttachmentChange } from "../types";
 
 export class Database {
 	constructor(private db: D1Database) {}
@@ -151,6 +151,166 @@ export class Database {
 			vaultId,
 			content: null,
 			rev,
+			deleted: 1,
+		});
+	}
+
+	// =====================================
+	// Attachment Methods (R2 Storage)
+	// =====================================
+
+	/**
+	 * Get an attachment by ID
+	 */
+	async getAttachment(id: string, vaultId: string = "default"): Promise<Attachment | null> {
+		const result = await this.db
+			.prepare("SELECT * FROM attachments WHERE id = ? AND vault_id = ?")
+			.bind(id, vaultId)
+			.first<Attachment>();
+
+		return result || null;
+	}
+
+	/**
+	 * Get an attachment by path
+	 */
+	async getAttachmentByPath(path: string, vaultId: string = "default"): Promise<Attachment | null> {
+		const result = await this.db
+			.prepare("SELECT * FROM attachments WHERE path = ? AND vault_id = ? AND deleted = 0")
+			.bind(path, vaultId)
+			.first<Attachment>();
+
+		return result || null;
+	}
+
+	/**
+	 * Create or update an attachment
+	 */
+	async upsertAttachment(attachment: {
+		id: string;
+		vaultId: string;
+		path: string;
+		contentType: string;
+		size: number;
+		hash: string;
+		r2Key: string;
+		deleted?: number;
+	}): Promise<void> {
+		const now = Date.now();
+		const existing = await this.getAttachment(attachment.id, attachment.vaultId);
+
+		if (existing) {
+			await this.db
+				.prepare(
+					"UPDATE attachments SET path = ?, content_type = ?, size = ?, hash = ?, r2_key = ?, deleted = ?, updated_at = ? WHERE id = ? AND vault_id = ?",
+				)
+				.bind(
+					attachment.path,
+					attachment.contentType,
+					attachment.size,
+					attachment.hash,
+					attachment.r2Key,
+					attachment.deleted || 0,
+					now,
+					attachment.id,
+					attachment.vaultId,
+				)
+				.run();
+		} else {
+			await this.db
+				.prepare(
+					"INSERT INTO attachments (id, vault_id, path, content_type, size, hash, r2_key, deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				)
+				.bind(
+					attachment.id,
+					attachment.vaultId,
+					attachment.path,
+					attachment.contentType,
+					attachment.size,
+					attachment.hash,
+					attachment.r2Key,
+					attachment.deleted || 0,
+					now,
+					now,
+				)
+				.run();
+		}
+
+		// Add to attachment changes feed
+		await this.addAttachmentChange({
+			attachment_id: attachment.id,
+			hash: attachment.hash,
+			deleted: attachment.deleted || 0,
+			vault_id: attachment.vaultId,
+		});
+	}
+
+	/**
+	 * Add a change to the attachment changes feed
+	 */
+	async addAttachmentChange(change: {
+		attachment_id: string;
+		hash: string;
+		deleted: number;
+		vault_id: string;
+	}): Promise<void> {
+		const now = Date.now();
+		await this.db
+			.prepare(
+				"INSERT INTO attachment_changes (attachment_id, hash, deleted, vault_id, created_at) VALUES (?, ?, ?, ?, ?)",
+			)
+			.bind(change.attachment_id, change.hash, change.deleted, change.vault_id, now)
+			.run();
+	}
+
+	/**
+	 * Get attachment changes since a sequence number
+	 */
+	async getAttachmentChanges(
+		vaultId: string = "default",
+		since: number = 0,
+		limit: number = 100,
+	): Promise<{ changes: AttachmentChange[]; lastSeq: number }> {
+		const result = await this.db
+			.prepare(
+				"SELECT * FROM attachment_changes WHERE vault_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?",
+			)
+			.bind(vaultId, since, limit)
+			.all<AttachmentChange>();
+
+		const changes = result.results || [];
+		const lastSeq = changes.length > 0 ? changes[changes.length - 1].seq : since;
+
+		return { changes, lastSeq };
+	}
+
+	/**
+	 * Get all attachments for a vault
+	 */
+	async getAllAttachments(vaultId: string = "default", limit: number = 100): Promise<Attachment[]> {
+		const result = await this.db
+			.prepare("SELECT * FROM attachments WHERE vault_id = ? AND deleted = 0 LIMIT ?")
+			.bind(vaultId, limit)
+			.all<Attachment>();
+
+		return result.results || [];
+	}
+
+	/**
+	 * Delete an attachment (soft delete)
+	 */
+	async deleteAttachment(id: string, vaultId: string): Promise<void> {
+		const existing = await this.getAttachment(id, vaultId);
+		if (!existing) return;
+
+		await this.upsertAttachment({
+			id,
+			vaultId,
+			path: existing.path,
+			contentType: existing.content_type,
+			size: existing.size,
+			hash: existing.hash,
+			r2Key: existing.r2_key,
 			deleted: 1,
 		});
 	}
