@@ -71,22 +71,31 @@ export class SyncSettingsTab extends PluginSettingTab {
 			);
 
 		// Sync interval
+		const intervalOptions: Record<string, number> = {
+			"15 seconds": 15,
+			"30 seconds": 30,
+			"1 minute": 60,
+			"5 minutes": 300,
+			"15 minutes": 900,
+			"30 minutes": 1800,
+			"60 minutes": 3600,
+		};
 		new Setting(containerEl)
 			.setName("Sync interval")
-			.setDesc("How often to sync (in minutes)")
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 60, 1)
-					.setValue(this.plugin.settings.syncInterval)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.syncInterval = value;
-						await this.plugin.saveSettings();
-						if (this.plugin.settings.autoSync) {
-							this.plugin.startAutoSync();
-						}
-					}),
-			);
+			.setDesc("How often to sync automatically")
+			.addDropdown((dropdown) => {
+				for (const [label, value] of Object.entries(intervalOptions)) {
+					dropdown.addOption(value.toString(), label);
+				}
+				dropdown.setValue(this.plugin.settings.syncInterval.toString());
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.syncInterval = Number.parseInt(value, 10);
+					await this.plugin.saveSettings();
+					if (this.plugin.settings.autoSync) {
+						this.plugin.startAutoSync();
+					}
+				});
+			});
 
 		// Test connection button
 		new Setting(containerEl)

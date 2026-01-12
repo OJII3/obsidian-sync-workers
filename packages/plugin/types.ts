@@ -1,7 +1,7 @@
 export interface SyncSettings {
 	serverUrl: string;
 	vaultId: string;
-	syncInterval: number; // in minutes
+	syncInterval: number; // in seconds
 	autoSync: boolean;
 	lastSync: number; // timestamp
 	lastSeq: number; // last sequence number from changes feed
@@ -11,7 +11,7 @@ export interface SyncSettings {
 export const DEFAULT_SETTINGS: SyncSettings = {
 	serverUrl: "http://localhost:8787",
 	vaultId: "default",
-	syncInterval: 5,
+	syncInterval: 30, // 30 seconds default
 	autoSync: true,
 	lastSync: 0,
 	lastSeq: 0,
