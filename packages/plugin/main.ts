@@ -77,12 +77,16 @@ export default class SyncWorkersPlugin extends Plugin {
 	startAutoSync() {
 		this.stopAutoSync(); // Clear any existing interval
 
-		const intervalMs = this.settings.syncInterval * 60 * 1000;
+		const intervalMs = this.settings.syncInterval * 1000;
 		this.syncIntervalId = window.setInterval(async () => {
 			await this.syncService.performSync();
 		}, intervalMs);
 
-		console.log(`Auto sync started with interval: ${this.settings.syncInterval} minutes`);
+		const intervalDisplay =
+			this.settings.syncInterval >= 60
+				? `${this.settings.syncInterval / 60} minutes`
+				: `${this.settings.syncInterval} seconds`;
+		console.log(`Auto sync started with interval: ${intervalDisplay}`);
 	}
 
 	stopAutoSync() {
