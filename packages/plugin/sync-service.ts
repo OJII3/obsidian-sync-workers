@@ -1,17 +1,19 @@
 import { type App, TFile, type Vault } from "obsidian";
+import { type BaseContentStore, getBaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
+import { type RetryOptions, retryFetch } from "./retry-fetch";
 import type {
+	AttachmentChangesResponse,
+	AttachmentMetadata,
+	AttachmentUploadResponse,
 	BulkDocsResponse,
 	ChangesResponse,
 	DocMetadata,
 	DocumentInput,
 	DocumentResponse,
 	SyncSettings,
-	AttachmentMetadata,
-	AttachmentChangesResponse,
-	AttachmentUploadResponse,
 } from "./types";
-import { isAttachmentFile, getContentType } from "./types";
+import { getContentType, isAttachmentFile } from "./types";
 
 export type SyncStatusType = "idle" | "syncing" | "success" | "error" | "paused";
 
@@ -41,6 +43,7 @@ export class SyncService {
 	private syncInProgress = false;
 	private metadataCache: Map<string, DocMetadata> = new Map();
 	private attachmentCache: Map<string, AttachmentMetadata> = new Map();
+	private baseContentStore: BaseContentStore;
 	private saveSettings: () => Promise<void>;
 	private onStatusChange: (status: SyncStatus) => void;
 	private syncStats = {
@@ -51,6 +54,8 @@ export class SyncService {
 		attachmentsPulled: 0,
 		attachmentsPushed: 0,
 	};
+	private migrationDone = false;
+	private retryOptions: RetryOptions;
 
 	constructor(
 		app: App,
@@ -64,11 +69,26 @@ export class SyncService {
 		this.settings = settings;
 		this.saveSettings = saveSettings;
 		this.onStatusChange = onStatusChange;
+		this.baseContentStore = getBaseContentStore();
+
+		// Configure retry options with exponential backoff
+		this.retryOptions = {
+			maxRetries: 4,
+			initialDelayMs: 2000, // 2s, 4s, 8s, 16s
+			maxDelayMs: 16000,
+			onRetry: (attempt, error, delayMs) => {
+				const errorMsg =
+					error instanceof Response ? `HTTP ${error.status}` : (error as Error).message;
+				console.log(`Retry attempt ${attempt} after ${delayMs}ms (${errorMsg})`);
+			},
+		};
 
 		// Initialize metadata cache from persisted settings
 		if (settings.metadataCache) {
 			for (const [path, metadata] of Object.entries(settings.metadataCache)) {
-				this.metadataCache.set(path, metadata);
+				// Don't copy baseContent to memory - it's now in IndexedDB
+				const { baseContent, ...metaWithoutBase } = metadata;
+				this.metadataCache.set(path, metaWithoutBase);
 			}
 		}
 
@@ -78,10 +98,65 @@ export class SyncService {
 				this.attachmentCache.set(path, metadata);
 			}
 		}
+
+		// Migrate existing baseContent to IndexedDB in background
+		this.migrateBaseContentToIndexedDB();
+	}
+
+	/**
+	 * Migrate existing baseContent from settings to IndexedDB
+	 */
+	private async migrateBaseContentToIndexedDB(): Promise<void> {
+		if (this.migrationDone) return;
+
+		try {
+			await this.baseContentStore.init();
+
+			// Check if there's baseContent in the old format
+			if (this.settings.metadataCache) {
+				let hasBaseContent = false;
+				for (const metadata of Object.values(this.settings.metadataCache)) {
+					if (metadata.baseContent) {
+						hasBaseContent = true;
+						break;
+					}
+				}
+
+				if (hasBaseContent) {
+					console.log("Migrating baseContent to IndexedDB...");
+					const count = await this.baseContentStore.migrateFromSettings(
+						this.settings.metadataCache,
+					);
+
+					// Remove baseContent from settings to save space
+					if (count > 0) {
+						for (const metadata of Object.values(this.settings.metadataCache)) {
+							delete metadata.baseContent;
+						}
+						await this.saveSettings();
+						console.log(`Migration complete: ${count} entries moved to IndexedDB`);
+					}
+				}
+			}
+
+			// Run cleanup to remove old entries (older than 90 days)
+			await this.baseContentStore.cleanup();
+
+			this.migrationDone = true;
+		} catch (error) {
+			console.error("Failed to migrate baseContent:", error);
+		}
 	}
 
 	updateSettings(settings: SyncSettings) {
 		this.settings = settings;
+	}
+
+	/**
+	 * Fetch with automatic retry on network errors
+	 */
+	private async fetchWithRetry(url: string | URL, init?: RequestInit): Promise<Response> {
+		return retryFetch(url, init, this.retryOptions);
 	}
 
 	private async persistMetadataCache(): Promise<void> {
@@ -161,45 +236,57 @@ export class SyncService {
 	}
 
 	private async pullChanges(): Promise<void> {
-		const url = `${this.settings.serverUrl}/api/changes?since=${this.settings.lastSeq}&limit=100&vault_id=${this.settings.vaultId}`;
+		const BATCH_SIZE = 100;
+		let since = this.settings.lastSeq;
+		let hasMore = true;
+		let totalProcessed = 0;
 
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch changes: ${response.statusText}`);
-		}
+		while (hasMore) {
+			const url = `${this.settings.serverUrl}/api/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
 
-		const data: ChangesResponse = await response.json();
-
-		console.log(`Received ${data.results.length} changes from server`);
-
-		const total = data.results.length;
-		let current = 0;
-
-		for (const change of data.results) {
-			current++;
-			this.onStatusChange({
-				status: "syncing",
-				progress: { phase: "pull", current, total },
-				stats: this.syncStats,
-			});
-
-			try {
-				if (change.deleted) {
-					await this.deleteLocalFile(change.id);
-				} else {
-					await this.pullDocument(change.id);
-				}
-				this.syncStats.pulled++;
-			} catch (error) {
-				console.error(`Error processing change for ${change.id}:`, error);
-				this.syncStats.errors++;
+			const response = await this.fetchWithRetry(url);
+			if (!response.ok) {
+				throw new Error(`Failed to fetch changes: ${response.statusText}`);
 			}
+
+			const data: ChangesResponse = await response.json();
+
+			console.log(`Received ${data.results.length} changes from server (since: ${since})`);
+
+			// Process changes in this batch
+			for (let i = 0; i < data.results.length; i++) {
+				const change = data.results[i];
+				totalProcessed++;
+				this.onStatusChange({
+					status: "syncing",
+					progress: { phase: "pull", current: totalProcessed, total: totalProcessed },
+					stats: this.syncStats,
+				});
+
+				try {
+					if (change.deleted) {
+						await this.deleteLocalFile(change.id);
+					} else {
+						await this.pullDocument(change.id);
+					}
+					this.syncStats.pulled++;
+				} catch (error) {
+					console.error(`Error processing change for ${change.id}:`, error);
+					this.syncStats.errors++;
+				}
+			}
+
+			// Update last sequence for this batch
+			if (data.last_seq > since) {
+				since = data.last_seq;
+				this.settings.lastSeq = data.last_seq;
+			}
+
+			// Check if there are more changes to fetch
+			hasMore = data.results.length === BATCH_SIZE;
 		}
 
-		// Update last sequence
-		if (data.last_seq > this.settings.lastSeq) {
-			this.settings.lastSeq = data.last_seq;
-		}
+		console.log(`Pull complete: ${totalProcessed} changes processed`);
 	}
 
 	private async pullDocument(docId: string): Promise<void> {
@@ -207,7 +294,7 @@ export class SyncService {
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
 
-		const response = await fetch(url);
+		const response = await this.fetchWithRetry(url);
 		if (!response.ok) {
 			if (response.status === 404) {
 				console.log(`Document ${docId} not found on server`);
@@ -258,13 +345,16 @@ export class SyncService {
 			console.log(`Created ${path}`);
 		}
 
-		// Update metadata cache with base content for future merges
+		// Update metadata cache (without baseContent - it's now in IndexedDB)
 		this.metadataCache.set(path, {
 			path,
 			rev: doc._rev,
 			lastModified: Date.now(),
-			baseContent: doc.content, // Store content for 3-way merge
 		});
+
+		// Store baseContent in IndexedDB for future 3-way merges
+		await this.baseContentStore.set(path, doc.content);
+
 		await this.persistMetadataCache();
 	}
 
@@ -275,6 +365,7 @@ export class SyncService {
 		if (file instanceof TFile) {
 			await this.vault.delete(file);
 			this.metadataCache.delete(path);
+			await this.baseContentStore.delete(path);
 			await this.persistMetadataCache();
 			console.log(`Deleted ${path}`);
 		}
@@ -296,11 +387,14 @@ export class SyncService {
 				const content = await this.vault.read(file);
 				const docId = this.pathToDocId(file.path);
 
+				// Get baseContent from IndexedDB for 3-way merge
+				const baseContent = await this.baseContentStore.get(file.path);
+
 				docsToUpdate.push({
 					_id: docId,
 					_rev: metadata?.rev,
 					content,
-					_base_content: metadata?.baseContent, // Send base content for 3-way merge
+					_base_content: baseContent, // Send base content for 3-way merge
 				});
 			}
 		}
@@ -336,7 +430,7 @@ export class SyncService {
 		// Use bulk docs endpoint for efficiency
 		const url = `${this.settings.serverUrl}/api/docs/bulk_docs?vault_id=${this.settings.vaultId}`;
 
-		const response = await fetch(url, {
+		const response = await this.fetchWithRetry(url, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -378,18 +472,20 @@ export class SyncService {
 						this.syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
-					// Normal update - update metadata with current content as base
+					// Normal update - update metadata
 					const content = await this.vault.read(file);
 					this.metadataCache.set(path, {
 						path,
 						rev: result.rev,
 						lastModified: file.stat.mtime,
-						baseContent: content,
 					});
+					// Store baseContent in IndexedDB
+					await this.baseContentStore.set(path, content);
 					this.syncStats.pushed++;
 				} else {
 					// File doesn't exist (was deleted), remove from cache
 					this.metadataCache.delete(path);
+					await this.baseContentStore.delete(path);
 					this.syncStats.pushed++;
 				}
 			} else if (result.error === "conflict") {
@@ -439,8 +535,8 @@ export class SyncService {
 					path,
 					rev: result.current_rev || "",
 					lastModified: file.stat.mtime,
-					baseContent: remoteContent,
 				});
+				await this.baseContentStore.set(path, remoteContent);
 				await this.persistMetadataCache();
 				console.log(`Using remote version: ${path}`);
 			} catch (error) {
@@ -462,7 +558,7 @@ export class SyncService {
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
 
-		const response = await fetch(url, {
+		const response = await this.fetchWithRetry(url, {
 			method: "PUT",
 			headers: {
 				"Content-Type": "application/json",
@@ -485,8 +581,8 @@ export class SyncService {
 				path,
 				rev: result.rev,
 				lastModified: Date.now(),
-				baseContent: content,
 			});
+			await this.baseContentStore.set(path, content);
 			await this.persistMetadataCache();
 		}
 	}
@@ -505,7 +601,7 @@ export class SyncService {
 
 	async testConnection(): Promise<boolean> {
 		try {
-			const response = await fetch(this.settings.serverUrl);
+			const response = await this.fetchWithRetry(this.settings.serverUrl);
 			if (!response.ok) {
 				return false;
 			}
@@ -522,45 +618,59 @@ export class SyncService {
 	// =====================================
 
 	private async pullAttachmentChanges(): Promise<void> {
-		const url = `${this.settings.serverUrl}/api/attachments/changes?since=${this.settings.lastAttachmentSeq}&limit=100&vault_id=${this.settings.vaultId}`;
+		const BATCH_SIZE = 100;
+		let since = this.settings.lastAttachmentSeq;
+		let hasMore = true;
+		let totalProcessed = 0;
 
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
-		}
+		while (hasMore) {
+			const url = `${this.settings.serverUrl}/api/attachments/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
 
-		const data: AttachmentChangesResponse = await response.json();
-
-		console.log(`Received ${data.results.length} attachment changes from server`);
-
-		const total = data.results.length;
-		let current = 0;
-
-		for (const change of data.results) {
-			current++;
-			this.onStatusChange({
-				status: "syncing",
-				progress: { phase: "pull-attachments", current, total },
-				stats: this.syncStats,
-			});
-
-			try {
-				if (change.deleted) {
-					await this.deleteLocalAttachment(change.path);
-				} else {
-					await this.pullAttachment(change.id, change.path, change.hash);
-				}
-				this.syncStats.attachmentsPulled++;
-			} catch (error) {
-				console.error(`Error processing attachment change for ${change.path}:`, error);
-				this.syncStats.errors++;
+			const response = await this.fetchWithRetry(url);
+			if (!response.ok) {
+				throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
 			}
+
+			const data: AttachmentChangesResponse = await response.json();
+
+			console.log(
+				`Received ${data.results.length} attachment changes from server (since: ${since})`,
+			);
+
+			// Process changes in this batch
+			for (let i = 0; i < data.results.length; i++) {
+				const change = data.results[i];
+				totalProcessed++;
+				this.onStatusChange({
+					status: "syncing",
+					progress: { phase: "pull-attachments", current: totalProcessed, total: totalProcessed },
+					stats: this.syncStats,
+				});
+
+				try {
+					if (change.deleted) {
+						await this.deleteLocalAttachment(change.path);
+					} else {
+						await this.pullAttachment(change.id, change.path, change.hash);
+					}
+					this.syncStats.attachmentsPulled++;
+				} catch (error) {
+					console.error(`Error processing attachment change for ${change.path}:`, error);
+					this.syncStats.errors++;
+				}
+			}
+
+			// Update last sequence for this batch
+			if (data.last_seq > since) {
+				since = data.last_seq;
+				this.settings.lastAttachmentSeq = data.last_seq;
+			}
+
+			// Check if there are more changes to fetch
+			hasMore = data.results.length === BATCH_SIZE;
 		}
 
-		// Update last sequence
-		if (data.last_seq > this.settings.lastAttachmentSeq) {
-			this.settings.lastAttachmentSeq = data.last_seq;
-		}
+		console.log(`Attachment pull complete: ${totalProcessed} changes processed`);
 	}
 
 	private async pullAttachment(id: string, path: string, serverHash: string): Promise<void> {
@@ -574,7 +684,7 @@ export class SyncService {
 		// Download attachment content
 		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(id)}/content?vault_id=${this.settings.vaultId}`;
 
-		const response = await fetch(url);
+		const response = await this.fetchWithRetry(url);
 		if (!response.ok) {
 			if (response.status === 404) {
 				console.log(`Attachment ${path} not found on server`);
@@ -672,7 +782,9 @@ export class SyncService {
 			return;
 		}
 
-		console.log(`Pushing ${attachmentsToUpload.length} attachments, deleting ${deletedAttachments.length}`);
+		console.log(
+			`Pushing ${attachmentsToUpload.length} attachments, deleting ${deletedAttachments.length}`,
+		);
 
 		let current = 0;
 
@@ -730,7 +842,7 @@ export class SyncService {
 
 		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(file.path)}?vault_id=${this.settings.vaultId}&hash=${hash}`;
 
-		const response = await fetch(url, {
+		const response = await this.fetchWithRetry(url, {
 			method: "PUT",
 			headers: {
 				"Content-Type": contentType,
@@ -759,7 +871,7 @@ export class SyncService {
 	private async deleteRemoteAttachment(path: string): Promise<void> {
 		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(path)}?vault_id=${this.settings.vaultId}`;
 
-		const response = await fetch(url, {
+		const response = await this.fetchWithRetry(url, {
 			method: "DELETE",
 		});
 
