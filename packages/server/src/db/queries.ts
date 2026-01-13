@@ -1,4 +1,4 @@
-import type { Change, Document, Revision, Attachment, AttachmentChange } from "../types";
+import type { Attachment, AttachmentChange, Change, Document, Revision } from "../types";
 
 export class Database {
 	constructor(private db: D1Database) {}
@@ -313,5 +313,123 @@ export class Database {
 			r2Key: existing.r2_key,
 			deleted: 1,
 		});
+	}
+
+	// =====================================
+	// Cleanup Methods
+	// =====================================
+
+	/**
+	 * Delete old revisions (older than specified days)
+	 * Keeps the most recent revision for each document
+	 * @param maxAgeDays Maximum age in days (default: 90)
+	 * @returns Number of deleted revisions
+	 */
+	async cleanupOldRevisions(maxAgeDays: number = 90): Promise<number> {
+		const cutoffTime = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+		// Delete old revisions, but keep at least the most recent one for each doc
+		// Using a subquery to find revisions that are not the latest
+		const result = await this.db
+			.prepare(
+				`DELETE FROM revisions
+				 WHERE created_at < ?
+				 AND id NOT IN (
+					 SELECT MAX(id) FROM revisions GROUP BY doc_id
+				 )`,
+			)
+			.bind(cutoffTime)
+			.run();
+
+		return result.meta.changes || 0;
+	}
+
+	/**
+	 * Delete old change feed entries (older than specified days)
+	 * Note: This doesn't affect sync functionality for active clients,
+	 * but new clients won't see history older than the cutoff
+	 * @param maxAgeDays Maximum age in days (default: 90)
+	 * @returns Number of deleted changes
+	 */
+	async cleanupOldChanges(maxAgeDays: number = 90): Promise<number> {
+		const cutoffTime = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+		const result = await this.db
+			.prepare("DELETE FROM changes WHERE created_at < ?")
+			.bind(cutoffTime)
+			.run();
+
+		return result.meta.changes || 0;
+	}
+
+	/**
+	 * Delete old attachment change feed entries
+	 * @param maxAgeDays Maximum age in days (default: 90)
+	 * @returns Number of deleted attachment changes
+	 */
+	async cleanupOldAttachmentChanges(maxAgeDays: number = 90): Promise<number> {
+		const cutoffTime = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+		const result = await this.db
+			.prepare("DELETE FROM attachment_changes WHERE created_at < ?")
+			.bind(cutoffTime)
+			.run();
+
+		return result.meta.changes || 0;
+	}
+
+	/**
+	 * Get cleanup statistics
+	 */
+	async getCleanupStats(): Promise<{
+		revisionCount: number;
+		changeCount: number;
+		attachmentChangeCount: number;
+		documentCount: number;
+		attachmentCount: number;
+	}> {
+		const [revisions, changes, attachmentChanges, documents, attachments] = await Promise.all([
+			this.db.prepare("SELECT COUNT(*) as count FROM revisions").first<{ count: number }>(),
+			this.db.prepare("SELECT COUNT(*) as count FROM changes").first<{ count: number }>(),
+			this.db
+				.prepare("SELECT COUNT(*) as count FROM attachment_changes")
+				.first<{ count: number }>(),
+			this.db
+				.prepare("SELECT COUNT(*) as count FROM documents WHERE deleted = 0")
+				.first<{ count: number }>(),
+			this.db
+				.prepare("SELECT COUNT(*) as count FROM attachments WHERE deleted = 0")
+				.first<{ count: number }>(),
+		]);
+
+		return {
+			revisionCount: revisions?.count || 0,
+			changeCount: changes?.count || 0,
+			attachmentChangeCount: attachmentChanges?.count || 0,
+			documentCount: documents?.count || 0,
+			attachmentCount: attachments?.count || 0,
+		};
+	}
+
+	/**
+	 * Perform full cleanup
+	 * @param maxAgeDays Maximum age in days (default: 90)
+	 */
+	async performFullCleanup(maxAgeDays: number = 90): Promise<{
+		deletedRevisions: number;
+		deletedChanges: number;
+		deletedAttachmentChanges: number;
+	}> {
+		const [deletedRevisions, deletedChanges, deletedAttachmentChanges] = await Promise.all([
+			this.cleanupOldRevisions(maxAgeDays),
+			this.cleanupOldChanges(maxAgeDays),
+			this.cleanupOldAttachmentChanges(maxAgeDays),
+		]);
+
+		return {
+			deletedRevisions,
+			deletedChanges,
+			deletedAttachmentChanges,
+		};
 	}
 }
