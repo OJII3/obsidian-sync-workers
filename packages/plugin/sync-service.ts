@@ -803,8 +803,10 @@ export class SyncService {
 				}),
 			);
 
-			// Process results
-			for (const result of uploadResults) {
+			// Process results - use index to track which file corresponds to each result
+			for (let j = 0; j < uploadResults.length; j++) {
+				const result = uploadResults[j];
+				const file = chunk[j];
 				completed++;
 				this.onStatusChange({
 					status: "syncing",
@@ -815,7 +817,7 @@ export class SyncService {
 				if (result.status === "fulfilled") {
 					this.syncStats.attachmentsPushed++;
 				} else {
-					console.error(`Failed to upload attachment:`, result.reason);
+					console.error(`Failed to upload attachment ${file.path}:`, result.reason);
 					this.syncStats.errors++;
 				}
 			}
@@ -885,10 +887,14 @@ export class SyncService {
 			}
 			if (response.status === 400) {
 				const errorBody = await response.json().catch(() => ({}));
-				throw new Error(`Invalid upload for ${file.path}: ${errorBody.error || response.statusText}`);
+				throw new Error(
+					`Invalid upload for ${file.path}: ${errorBody.error || response.statusText}`,
+				);
 			}
 			if (response.status === 409) {
-				throw new Error(`Hash mismatch for ${file.path}. File may have been corrupted during transfer.`);
+				throw new Error(
+					`Hash mismatch for ${file.path}. File may have been corrupted during transfer.`,
+				);
 			}
 			throw new Error(`Failed to upload attachment ${file.path}: ${response.statusText}`);
 		}

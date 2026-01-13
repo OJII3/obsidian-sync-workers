@@ -187,6 +187,8 @@ const app = new Elysia({ aot: false })
 			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 			"Access-Control-Allow-Headers":
 				"Content-Type, Authorization, X-Content-Hash, X-Content-Length",
+			"Access-Control-Expose-Headers":
+				"Content-Type, X-Content-Hash, X-Content-Length, X-Attachment-Hash",
 		};
 	})
 	// Authentication middleware - applies to all /api/* routes
@@ -507,19 +509,23 @@ const app = new Elysia({ aot: false })
 					set.status = 413;
 					return {
 						error: "File too large",
+						message: `Maximum file size is ${MAX_ATTACHMENT_SIZE / 1024 / 1024}MB`,
 						max_size: MAX_ATTACHMENT_SIZE,
 						actual_size: size,
 					};
 				}
 
 				// Verify content length if provided
-				if (clientContentLength && parseInt(clientContentLength, 10) !== size) {
-					set.status = 400;
-					return {
-						error: "Content length mismatch",
-						expected: clientContentLength,
-						actual: size,
-					};
+				if (clientContentLength) {
+					const expectedLength = parseInt(clientContentLength, 10);
+					if (!Number.isNaN(expectedLength) && expectedLength !== size) {
+						set.status = 400;
+						return {
+							error: "Content length mismatch",
+							expected: expectedLength,
+							actual: size,
+						};
+					}
 				}
 
 				// Generate hash
