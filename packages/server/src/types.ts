@@ -2,6 +2,7 @@ export interface Env {
 	DB: D1Database;
 	ATTACHMENTS: R2Bucket;
 	API_KEY?: string;
+	CORS_ORIGIN?: string;
 }
 
 export interface Document {

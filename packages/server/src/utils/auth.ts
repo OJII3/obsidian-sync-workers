@@ -1,11 +1,15 @@
-import type { Env } from "../types";
+export interface AuthContext {
+	request: Request;
+	set: { status?: number | string };
+	env?: { API_KEY?: string };
+}
 
 /**
  * Simple API key authentication middleware for Elysia
  * Checks for API key in Authorization header only
  * Query parameter API keys are NOT allowed for security reasons
  */
-export function requireAuth(context: { request: Request; set: any; env?: Env }): boolean {
+export function requireAuth(context: AuthContext): boolean {
 	const { request, set, env } = context;
 
 	if (!env) {

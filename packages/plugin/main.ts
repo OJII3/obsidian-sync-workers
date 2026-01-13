@@ -152,7 +152,6 @@ export default class SyncWorkersPlugin extends Plugin {
 				textEl.setText("Paused");
 				break;
 			}
-			case "idle":
 			default: {
 				if (this.settings.autoSync) {
 					iconEl.setText("◉");

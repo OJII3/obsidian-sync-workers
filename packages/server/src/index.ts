@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env as cfEnv } from "cloudflare:workers";
 import { Elysia } from "elysia";
 import { Database } from "./db/queries";
 import type {
@@ -6,10 +6,13 @@ import type {
 	BulkDocsRequest,
 	ChangesResponse,
 	DocumentInput,
+	Env,
 } from "./types";
 import { authErrorResponse, requireAuth } from "./utils/auth";
 import { threeWayMerge } from "./utils/merge";
 import { generateRevision } from "./utils/revision";
+
+const env = cfEnv as Env;
 
 /**
  * Generate SHA-256 hash from ArrayBuffer
@@ -690,7 +693,7 @@ const app = new Elysia({ aot: false })
 		set.status = 500;
 		return {
 			error: "Internal server error",
-			message: error.message,
+			message: error instanceof Error ? error.message : "Unknown error",
 		};
 	})
 	.compile();
