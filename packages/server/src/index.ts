@@ -402,19 +402,24 @@ const app = new Elysia({ aot: false })
 					limit,
 				);
 
-				// Get attachment details for each change
-				const results = await Promise.all(
+				// Get attachment details for each change, filtering out missing attachments
+				const resultsWithNulls = await Promise.all(
 					changesList.map(async (change) => {
 						const attachment = await db.getAttachment(change.attachment_id, vaultId);
+						if (!attachment) {
+							console.warn(`Attachment metadata missing for id: ${change.attachment_id}`);
+							return null;
+						}
 						return {
 							seq: change.seq,
 							id: change.attachment_id,
-							path: attachment?.path || "",
+							path: attachment.path,
 							hash: change.hash,
 							deleted: change.deleted === 1 ? true : undefined,
 						};
 					}),
 				);
+				const results = resultsWithNulls.filter((r): r is NonNullable<typeof r> => r !== null);
 
 				const response: AttachmentChangesResponse = {
 					results,

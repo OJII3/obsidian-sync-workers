@@ -671,9 +671,17 @@ export class SyncService {
 		}
 
 		console.log(`Attachment pull complete: ${totalProcessed} changes processed`);
+
+		// Persist the updated lastAttachmentSeq to prevent re-fetching on reload
+		await this.persistMetadataCache();
 	}
 
 	private async pullAttachment(id: string, path: string, serverHash: string): Promise<void> {
+		// Validate path to prevent file creation errors
+		if (!path || path.trim() === "") {
+			throw new Error(`Cannot download attachment: empty path for id ${id}`);
+		}
+
 		// Check if local file exists with same hash
 		const localMeta = this.attachmentCache.get(path);
 		if (localMeta && localMeta.hash === serverHash) {
