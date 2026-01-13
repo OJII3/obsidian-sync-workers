@@ -75,6 +75,11 @@ function generateR2Key(vaultId: string, path: string, hash: string): string {
 }
 
 /**
+ * Maximum attachment size (100MB)
+ */
+const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024;
+
+/**
  * Shared bulk docs handler to avoid code duplication
  */
 async function handleBulkDocs(request: BulkDocsRequest, vaultId: string) {
@@ -180,7 +185,8 @@ const app = new Elysia({ aot: false })
 		set.headers = {
 			"Access-Control-Allow-Origin": allowedOrigin,
 			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type, Authorization",
+			"Access-Control-Allow-Headers":
+				"Content-Type, Authorization, X-Content-Hash, X-Content-Length",
 		};
 	})
 	// Authentication middleware - applies to all /api/* routes
@@ -477,7 +483,9 @@ const app = new Elysia({ aot: false })
 			.put("/:path", async ({ params, query, request, set }) => {
 				const path = decodeURIComponent(params.path);
 				const vaultId = query.vault_id || "default";
-				const clientHash = query.hash;
+				// Prefer X-Content-Hash header (more secure), fallback to query param for backward compatibility
+				const clientHash = request.headers.get("X-Content-Hash") || query.hash;
+				const clientContentLength = request.headers.get("X-Content-Length");
 
 				// Validate path to prevent directory traversal attacks
 				if (!validateAttachmentPath(path)) {
@@ -494,14 +502,34 @@ const app = new Elysia({ aot: false })
 				const data = await request.arrayBuffer();
 				const size = data.byteLength;
 
+				// Validate file size
+				if (size > MAX_ATTACHMENT_SIZE) {
+					set.status = 413;
+					return {
+						error: "File too large",
+						max_size: MAX_ATTACHMENT_SIZE,
+						actual_size: size,
+					};
+				}
+
+				// Verify content length if provided
+				if (clientContentLength && parseInt(clientContentLength, 10) !== size) {
+					set.status = 400;
+					return {
+						error: "Content length mismatch",
+						expected: clientContentLength,
+						actual: size,
+					};
+				}
+
 				// Generate hash
 				const hash = await generateHash(data);
 
-				// Verify hash if provided
+				// Verify hash if provided (use 409 Conflict for hash mismatch to indicate data integrity issue)
 				if (clientHash && clientHash !== hash) {
-					set.status = 400;
+					set.status = 409;
 					return {
-						error: "Hash mismatch",
+						error: "Hash mismatch - file may have been corrupted during transfer",
 						expected: clientHash,
 						actual: hash,
 					};

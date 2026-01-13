@@ -749,6 +749,9 @@ export class SyncService {
 		}
 	}
 
+	// Number of concurrent uploads (like s3-image-uploader uses Promise.all for parallel uploads)
+	private static readonly UPLOAD_CONCURRENCY = 3;
+
 	private async pushAttachmentChanges(): Promise<void> {
 		const files = this.vault.getFiles();
 		const attachmentFiles = files.filter((file) => isAttachmentFile(file.path));
@@ -783,35 +786,47 @@ export class SyncService {
 		}
 
 		console.log(
-			`Pushing ${attachmentsToUpload.length} attachments, deleting ${deletedAttachments.length}`,
+			`Pushing ${attachmentsToUpload.length} attachments (${SyncService.UPLOAD_CONCURRENCY} concurrent), deleting ${deletedAttachments.length}`,
 		);
 
-		let current = 0;
+		let completed = 0;
 
-		// Upload new/modified attachments
-		for (const file of attachmentsToUpload) {
-			current++;
-			this.onStatusChange({
-				status: "syncing",
-				progress: { phase: "push-attachments", current, total },
-				stats: this.syncStats,
-			});
+		// Upload new/modified attachments in parallel with concurrency limit
+		// This is inspired by s3-image-uploader's Promise.all pattern for parallel uploads
+		for (let i = 0; i < attachmentsToUpload.length; i += SyncService.UPLOAD_CONCURRENCY) {
+			const chunk = attachmentsToUpload.slice(i, i + SyncService.UPLOAD_CONCURRENCY);
 
-			try {
-				await this.uploadAttachment(file);
-				this.syncStats.attachmentsPushed++;
-			} catch (error) {
-				console.error(`Failed to upload attachment ${file.path}:`, error);
-				this.syncStats.errors++;
+			const uploadResults = await Promise.allSettled(
+				chunk.map(async (file) => {
+					await this.uploadAttachment(file);
+					return file.path;
+				}),
+			);
+
+			// Process results
+			for (const result of uploadResults) {
+				completed++;
+				this.onStatusChange({
+					status: "syncing",
+					progress: { phase: "push-attachments", current: completed, total },
+					stats: this.syncStats,
+				});
+
+				if (result.status === "fulfilled") {
+					this.syncStats.attachmentsPushed++;
+				} else {
+					console.error(`Failed to upload attachment:`, result.reason);
+					this.syncStats.errors++;
+				}
 			}
 		}
 
-		// Delete remote attachments
+		// Delete remote attachments (sequential to avoid race conditions)
 		for (const path of deletedAttachments) {
-			current++;
+			completed++;
 			this.onStatusChange({
 				status: "syncing",
-				progress: { phase: "push-attachments", current, total },
+				progress: { phase: "push-attachments", current: completed, total },
 				stats: this.syncStats,
 			});
 
@@ -828,8 +843,19 @@ export class SyncService {
 		await this.persistMetadataCache();
 	}
 
+	// Maximum attachment size (100MB)
+	private static readonly MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024;
+
 	private async uploadAttachment(file: TFile): Promise<void> {
 		const data = await this.vault.readBinary(file);
+
+		// Validate file size
+		if (data.byteLength > SyncService.MAX_ATTACHMENT_SIZE) {
+			throw new Error(
+				`File ${file.path} is too large (${(data.byteLength / 1024 / 1024).toFixed(1)}MB). Maximum size is ${SyncService.MAX_ATTACHMENT_SIZE / 1024 / 1024}MB.`,
+			);
+		}
+
 		const hash = await this.generateHash(data);
 		const contentType = getContentType(file.path);
 
@@ -840,18 +866,31 @@ export class SyncService {
 			return;
 		}
 
-		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(file.path)}?vault_id=${this.settings.vaultId}&hash=${hash}`;
+		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(file.path)}?vault_id=${this.settings.vaultId}`;
 
 		const response = await this.fetchWithRetry(url, {
 			method: "PUT",
 			headers: {
 				"Content-Type": contentType,
+				"X-Content-Hash": hash,
+				"X-Content-Length": data.byteLength.toString(),
 			},
 			body: data,
 		});
 
 		if (!response.ok) {
-			throw new Error(`Failed to upload attachment: ${response.statusText}`);
+			// Handle specific error codes
+			if (response.status === 413) {
+				throw new Error(`File ${file.path} is too large for the server.`);
+			}
+			if (response.status === 400) {
+				const errorBody = await response.json().catch(() => ({}));
+				throw new Error(`Invalid upload for ${file.path}: ${errorBody.error || response.statusText}`);
+			}
+			if (response.status === 409) {
+				throw new Error(`Hash mismatch for ${file.path}. File may have been corrupted during transfer.`);
+			}
+			throw new Error(`Failed to upload attachment ${file.path}: ${response.statusText}`);
 		}
 
 		const result: AttachmentUploadResponse = await response.json();
