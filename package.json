@@ -15,7 +15,9 @@
 		"build": "bun run build:server && bun run build:plugin",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
-		"check": "biome check --write ."
+		"check": "biome check --write .",
+		"test": "bun test",
+		"test:server": "bun run --cwd packages/server test"
 	},
 	"keywords": [
 		"obsidian",
