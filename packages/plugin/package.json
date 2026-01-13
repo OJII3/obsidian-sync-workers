@@ -19,7 +19,7 @@
 		"@types/node": "^20.10.0",
 		"builtin-modules": "^3.3.0",
 		"esbuild": "^0.25.0",
-		"obsidian": "latest",
+		"obsidian": "1.11.4",
 		"tslib": "^2.6.2",
 		"typescript": "^5.3.3"
 	}
