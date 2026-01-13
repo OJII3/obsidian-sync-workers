@@ -1,21 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { authErrorResponse, requireAuth } from "../auth";
+import { type AuthContext, authErrorResponse, requireAuth } from "../auth";
 
 function createMockContext(options: {
 	authHeader?: string | null;
 	apiKey?: string;
 	hasEnv?: boolean;
-}) {
+}): AuthContext {
 	const headers = new Headers();
 	if (options.authHeader) {
 		headers.set("Authorization", options.authHeader);
 	}
 
 	const request = new Request("http://localhost/test", { headers });
-	const set = { status: 200 };
+	const set: { status: number | string } = { status: 200 };
 	const env = options.hasEnv === false ? undefined : { API_KEY: options.apiKey };
 
-	return { request, set, env: env as any };
+	return { request, set, env };
 }
 
 describe("auth", () => {
