@@ -85,8 +85,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setDesc("Sync when files are saved")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
-					this.plugin.settings.syncOnSave = value;
-					await this.plugin.saveSettings();
+					this.plugin.setSyncOnSave(value);
 				}),
 			);
 
