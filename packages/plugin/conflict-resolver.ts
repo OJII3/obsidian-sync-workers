@@ -1,8 +1,9 @@
-import { type App, MarkdownView, TFile, type Vault } from "obsidian";
+import { type App, TFile, type Vault } from "obsidian";
 import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
+import { docIdToPath, updateFileContent } from "./sync-utils";
 import type { BulkDocsResponse, SyncSettings } from "./types";
 
 export class ConflictResolver {
@@ -30,7 +31,7 @@ export class ConflictResolver {
 	}
 
 	async handleConflict(result: BulkDocsResponse): Promise<void> {
-		const path = this.docIdToPath(result.id);
+		const path = docIdToPath(result.id);
 		const file = this.vault.getAbstractFileByPath(path);
 
 		if (!(file instanceof TFile)) {
@@ -58,7 +59,7 @@ export class ConflictResolver {
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version
 			try {
-				await this.updateFileContent(file, remoteContent);
+				await updateFileContent(this.app, this.vault, file, remoteContent);
 				this.metadataManager.getMetadataCache().set(path, {
 					path,
 					rev: result.current_rev || "",
@@ -102,7 +103,7 @@ export class ConflictResolver {
 
 		const result = await response.json();
 		if (result.ok && result.rev) {
-			const path = this.docIdToPath(docId);
+			const path = docIdToPath(docId);
 			this.metadataManager.getMetadataCache().set(path, {
 				path,
 				rev: result.rev,
@@ -111,22 +112,6 @@ export class ConflictResolver {
 			await this.baseContentStore.set(path, content);
 			await this.metadataManager.persistCache();
 		}
-	}
-
-	private async updateFileContent(file: TFile, content: string): Promise<void> {
-		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (activeView?.file?.path === file.path) {
-			activeView.editor.setValue(content);
-			return;
-		}
-
-		await this.vault.process(file, () => content);
-	}
-
-	private docIdToPath(docId: string): string {
-		// Convert document ID to file path
-		// Add .md extension
-		return `${docId}.md`;
 	}
 
 	updateSettings(settings: SyncSettings): void {

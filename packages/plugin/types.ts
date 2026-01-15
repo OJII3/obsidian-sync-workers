@@ -91,7 +91,7 @@ export interface AttachmentMetadata {
 	lastModified: number;
 }
 
-export interface AttachmentChange {
+export interface AttachmentChangeResult {
 	seq: number;
 	id: string;
 	path: string;
@@ -100,7 +100,7 @@ export interface AttachmentChange {
 }
 
 export interface AttachmentChangesResponse {
-	results: AttachmentChange[];
+	results: AttachmentChangeResult[];
 	last_seq: number;
 }
 
@@ -111,7 +111,7 @@ export interface AttachmentUploadResponse {
 	hash: string;
 	size: number;
 	content_type: string;
-	duplicate?: boolean; // true if this exact content already exists
+	unchanged?: boolean; // true if the server already has identical content
 }
 
 export interface SyncStats {

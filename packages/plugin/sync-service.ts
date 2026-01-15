@@ -33,6 +33,7 @@ export class SyncService {
 	private attachmentSync: AttachmentSync;
 	private saveSettings: () => Promise<void>;
 	private onStatusChange: (status: SyncStatus) => void;
+	private baseContentMigration: Promise<void>;
 	private syncStats: SyncStats = {
 		pulled: 0,
 		pushed: 0,
@@ -94,7 +95,7 @@ export class SyncService {
 		);
 
 		// Migrate existing baseContent to IndexedDB in background
-		this.metadataManager.migrateBaseContentToIndexedDB();
+		this.baseContentMigration = this.metadataManager.migrateBaseContentToIndexedDB();
 	}
 
 	updateSettings(settings: SyncSettings) {
@@ -124,6 +125,8 @@ export class SyncService {
 		this.onStatusChange({ status: "syncing", stats: this.syncStats });
 
 		try {
+			await this.baseContentMigration;
+
 			// Step 1: Pull document changes from server
 			this.documentSync.setProgressCallback((current, total) => {
 				this.onStatusChange({

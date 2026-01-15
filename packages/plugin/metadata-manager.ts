@@ -7,7 +7,7 @@ export class MetadataManager {
 	private baseContentStore: BaseContentStore;
 	private settings: SyncSettings;
 	private saveSettings: () => Promise<void>;
-	private migrationDone = false;
+	private migrationPromise: Promise<void> | null = null;
 
 	constructor(
 		settings: SyncSettings,
@@ -22,7 +22,8 @@ export class MetadataManager {
 		if (settings.metadataCache) {
 			for (const [path, metadata] of Object.entries(settings.metadataCache)) {
 				// Don't copy baseContent to memory - it's now in IndexedDB
-				const { baseContent, ...metaWithoutBase } = metadata;
+				const metaWithoutBase = { ...metadata };
+				delete metaWithoutBase.baseContent;
 				this.metadataCache.set(path, metaWithoutBase);
 			}
 		}
@@ -47,8 +48,13 @@ export class MetadataManager {
 	 * Migrate existing baseContent from settings to IndexedDB
 	 */
 	async migrateBaseContentToIndexedDB(): Promise<void> {
-		if (this.migrationDone) return;
+		if (!this.migrationPromise) {
+			this.migrationPromise = this.runMigration();
+		}
+		return this.migrationPromise;
+	}
 
+	private async runMigration(): Promise<void> {
 		try {
 			await this.baseContentStore.init();
 
@@ -79,8 +85,6 @@ export class MetadataManager {
 
 			// Run cleanup to remove old entries (older than 90 days)
 			await this.baseContentStore.cleanup();
-
-			this.migrationDone = true;
 		} catch (error) {
 			console.error("Failed to migrate baseContent:", error);
 		}

@@ -1,8 +1,9 @@
-import { type App, MarkdownView, TFile, type Vault } from "obsidian";
+import { type App, TFile, type Vault } from "obsidian";
 import type { BaseContentStore } from "./base-content-store";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
+import { docIdToPath, pathToDocId, updateFileContent } from "./sync-utils";
 import type {
 	BulkDocsResponse,
 	ChangesResponse,
@@ -105,7 +106,7 @@ export class DocumentSync {
 			// Check if file has been modified since last sync
 			if (!metadata || fileModTime > metadata.lastModified) {
 				const content = await this.vault.read(file);
-				const docId = this.pathToDocId(file.path);
+				const docId = pathToDocId(file.path);
 
 				// Get baseContent from IndexedDB for 3-way merge
 				const baseContent = await this.baseContentStore.get(file.path);
@@ -123,7 +124,7 @@ export class DocumentSync {
 		for (const [path, metadata] of metadataCache.entries()) {
 			if (!currentFilePaths.has(path)) {
 				// File was deleted locally, push deletion to server
-				const docId = this.pathToDocId(path);
+				const docId = pathToDocId(path);
 				docsToUpdate.push({
 					_id: docId,
 					_rev: metadata.rev,
@@ -169,7 +170,7 @@ export class DocumentSync {
 			this.onProgress?.(current, total);
 
 			if (result.ok && result.rev) {
-				const path = this.docIdToPath(result.id);
+				const path = docIdToPath(result.id);
 				const file = this.vault.getAbstractFileByPath(path);
 
 				if (result.merged) {
@@ -227,7 +228,7 @@ export class DocumentSync {
 		const doc: DocumentResponse = await response.json();
 
 		// Check if local file exists
-		const path = this.docIdToPath(doc._id);
+		const path = docIdToPath(doc._id);
 		const file = this.vault.getAbstractFileByPath(path);
 		const metadataCache = this.metadataManager.getMetadataCache();
 
@@ -239,7 +240,7 @@ export class DocumentSync {
 			}
 
 			// Update file
-			await this.updateFileContent(file, doc.content);
+			await updateFileContent(this.app, this.vault, file, doc.content);
 		} else {
 			// Create new file, ensuring parent folders exist
 			const lastSlashIndex = path.lastIndexOf("/");
@@ -278,7 +279,7 @@ export class DocumentSync {
 	}
 
 	private async deleteLocalFile(docId: string): Promise<void> {
-		const path = this.docIdToPath(docId);
+		const path = docIdToPath(docId);
 		const file = this.vault.getAbstractFileByPath(path);
 		const metadataCache = this.metadataManager.getMetadataCache();
 
@@ -288,28 +289,6 @@ export class DocumentSync {
 			await this.baseContentStore.delete(path);
 			await this.metadataManager.persistCache();
 		}
-	}
-
-	private async updateFileContent(file: TFile, content: string): Promise<void> {
-		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (activeView?.file?.path === file.path) {
-			activeView.editor.setValue(content);
-			return;
-		}
-
-		await this.vault.process(file, () => content);
-	}
-
-	private pathToDocId(path: string): string {
-		// Convert file path to document ID
-		// Remove .md extension and use forward slashes
-		return path.replace(/\.md$/, "").replace(/\\/g, "/");
-	}
-
-	private docIdToPath(docId: string): string {
-		// Convert document ID to file path
-		// Add .md extension
-		return `${docId}.md`;
 	}
 
 	updateSettings(settings: SyncSettings): void {
