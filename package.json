@@ -12,6 +12,7 @@
 		"dev:plugin": "bun run --cwd packages/plugin dev",
 		"build:server": "bun run --cwd packages/server deploy",
 		"build:plugin": "bun run --cwd packages/plugin build",
+		"typecheck:plugin": "bun run --cwd packages/plugin typecheck",
 		"build": "bun run build:server && bun run build:plugin",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
