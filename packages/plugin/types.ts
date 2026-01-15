@@ -62,10 +62,9 @@ export interface BulkDocsResponse {
 	rev?: string;
 	error?: string;
 	reason?: string;
-	merged?: boolean; // Indicates automatic merge was performed
-	current_content?: string; // Server's current content (for conflicts)
-	current_rev?: string; // Server's current revision (for conflicts)
-	conflicts?: ConflictRegion[]; // Conflict details
+	merged?: boolean; // true if server performed 3-way merge
+	current_content?: string; // current server content for conflict resolution
+	current_rev?: string; // current server revision for conflict resolution
 }
 
 export interface ConflictRegion {
@@ -80,19 +79,19 @@ export interface DocMetadata {
 	path: string;
 	rev: string;
 	lastModified: number;
-	baseContent?: string; // Content at last successful sync (for 3-way merge)
+	baseContent?: string; // For three-way merge: last synced content (migrated to IndexedDB)
 }
 
 // Attachment types
 export interface AttachmentMetadata {
 	path: string;
-	hash: string;
+	hash: string; // SHA-256 hash
 	size: number;
 	contentType: string;
 	lastModified: number;
 }
 
-export interface AttachmentChangeResult {
+export interface AttachmentChange {
 	seq: number;
 	id: string;
 	path: string;
@@ -101,7 +100,7 @@ export interface AttachmentChangeResult {
 }
 
 export interface AttachmentChangesResponse {
-	results: AttachmentChangeResult[];
+	results: AttachmentChange[];
 	last_seq: number;
 }
 
@@ -112,7 +111,16 @@ export interface AttachmentUploadResponse {
 	hash: string;
 	size: number;
 	content_type: string;
-	unchanged?: boolean;
+	duplicate?: boolean; // true if this exact content already exists
+}
+
+export interface SyncStats {
+	pulled: number;
+	pushed: number;
+	conflicts: number;
+	errors: number;
+	attachmentsPulled: number;
+	attachmentsPushed: number;
 }
 
 // Common image and binary file extensions
