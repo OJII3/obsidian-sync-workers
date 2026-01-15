@@ -3,6 +3,8 @@ export interface SyncSettings {
 	vaultId: string;
 	syncInterval: number; // in seconds
 	autoSync: boolean;
+	syncOnStartup: boolean;
+	syncOnSave: boolean;
 	syncAttachments: boolean; // sync binary files (images, PDFs, etc.)
 	lastSync: number; // timestamp
 	lastSeq: number; // last sequence number from changes feed
@@ -16,6 +18,8 @@ export const DEFAULT_SETTINGS: SyncSettings = {
 	vaultId: "default",
 	syncInterval: 30, // 30 seconds default
 	autoSync: true,
+	syncOnStartup: true,
+	syncOnSave: true,
 	syncAttachments: true, // sync attachments by default
 	lastSync: 0,
 	lastSeq: 0,
