@@ -262,7 +262,6 @@ export class BaseContentStore {
 					deletedCount++;
 					cursor.continue();
 				} else {
-					console.log(`Cleaned up ${deletedCount} old baseContent entries`);
 					resolve(deletedCount);
 				}
 			};
@@ -292,7 +291,6 @@ export class BaseContentStore {
 			}
 		}
 
-		console.log(`Migrated ${migratedCount} baseContent entries to IndexedDB`);
 		return migratedCount;
 	}
 

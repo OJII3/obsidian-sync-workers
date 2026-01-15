@@ -14,8 +14,6 @@ export class SyncSettingsTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Obsidian Sync Workers Settings" });
-
 		// Server URL
 		const serverUrlSetting = new Setting(containerEl)
 			.setName("Server URL")
@@ -154,7 +152,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 			);
 
 		// Status information
-		containerEl.createEl("h3", { text: "Status" });
+		new Setting(containerEl).setName("Status").setHeading();
 
 		const statusDiv = containerEl.createDiv();
 		statusDiv.createEl("p", {

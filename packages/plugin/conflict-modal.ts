@@ -24,7 +24,7 @@ export class ConflictResolutionModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Sync Conflict Detected" });
+		contentEl.createEl("h2", { text: "Sync conflict detected" });
 
 		contentEl.createEl("p", {
 			text: `The file "${this.filePath}" has different changes locally and on the server.`,
@@ -40,7 +40,7 @@ export class ConflictResolutionModal extends Modal {
 
 		// Local version preview
 		const localPreview = previewContainer.createDiv("conflict-preview");
-		localPreview.createEl("h3", { text: "Local Version" });
+		localPreview.createEl("h3", { text: "Local version" });
 		const localCode = localPreview.createEl("pre");
 		localCode.createEl("code", {
 			text: this.truncateContent(this.localContent),
@@ -48,7 +48,7 @@ export class ConflictResolutionModal extends Modal {
 
 		// Remote version preview
 		const remotePreview = previewContainer.createDiv("conflict-preview");
-		remotePreview.createEl("h3", { text: "Remote Version (Server)" });
+		remotePreview.createEl("h3", { text: "Remote version (server)" });
 		const remoteCode = remotePreview.createEl("pre");
 		remoteCode.createEl("code", {
 			text: this.truncateContent(this.remoteContent),
@@ -60,7 +60,7 @@ export class ConflictResolutionModal extends Modal {
 		new Setting(buttonContainer)
 			.addButton((btn) =>
 				btn
-					.setButtonText("Use Local")
+					.setButtonText("Use local")
 					.setCta()
 					.onClick(() => {
 						this.result = ConflictResolution.UseLocal;
@@ -69,7 +69,7 @@ export class ConflictResolutionModal extends Modal {
 			)
 			.addButton((btn) =>
 				btn
-					.setButtonText("Use Remote")
+					.setButtonText("Use remote")
 					.setWarning()
 					.onClick(() => {
 						this.result = ConflictResolution.UseRemote;
