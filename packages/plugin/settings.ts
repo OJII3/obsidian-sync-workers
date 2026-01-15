@@ -68,6 +68,27 @@ export class SyncSettingsTab extends PluginSettingTab {
 				}),
 			);
 
+		// Sync on startup
+		new Setting(containerEl)
+			.setName("Sync on startup")
+			.setDesc("Sync once when Obsidian starts")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
+					this.plugin.settings.syncOnStartup = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		// Sync on save
+		new Setting(containerEl)
+			.setName("Sync on save")
+			.setDesc("Sync when files are saved")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
+					this.plugin.setSyncOnSave(value);
+				}),
+			);
+
 		// Sync attachments toggle
 		new Setting(containerEl)
 			.setName("Sync attachments")

@@ -1,4 +1,4 @@
-import { Notice, Plugin } from "obsidian";
+import { type EventRef, Notice, Plugin, TFile } from "obsidian";
 import { SyncSettingsTab } from "./settings";
 import { SyncService, type SyncStatus } from "./sync-service";
 import { DEFAULT_SETTINGS, type SyncSettings } from "./types";
@@ -8,6 +8,10 @@ export default class SyncWorkersPlugin extends Plugin {
 	syncService: SyncService;
 	private syncIntervalId: number | null = null;
 	private statusBarItem: HTMLElement | null = null;
+	private syncDebounceId: number | null = null;
+	private readonly syncDebounceMs = 1000;
+	private syncOnSaveEventRef: EventRef | null = null;
+	private layoutReady = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -61,10 +65,21 @@ export default class SyncWorkersPlugin extends Plugin {
 		if (this.settings.autoSync) {
 			this.startAutoSync();
 		}
+
+		this.app.workspace.onLayoutReady(() => {
+			this.layoutReady = true;
+			if (this.settings.syncOnStartup) {
+				this.scheduleSync("startup");
+			}
+
+			this.updateSyncOnSaveRegistration();
+		});
 	}
 
 	onunload() {
 		this.stopAutoSync();
+		this.clearScheduledSync();
+		this.unregisterSyncOnSave();
 	}
 
 	async loadSettings() {
@@ -90,6 +105,55 @@ export default class SyncWorkersPlugin extends Plugin {
 			window.clearInterval(this.syncIntervalId);
 			this.syncIntervalId = null;
 		}
+	}
+
+	setSyncOnSave(enabled: boolean) {
+		this.settings.syncOnSave = enabled;
+		this.saveSettings();
+		this.updateSyncOnSaveRegistration();
+	}
+
+	private updateSyncOnSaveRegistration() {
+		if (!this.layoutReady) return;
+		if (this.settings.syncOnSave) {
+			this.registerSyncOnSave();
+		} else {
+			this.unregisterSyncOnSave();
+		}
+	}
+
+	private registerSyncOnSave() {
+		if (this.syncOnSaveEventRef) return;
+		this.syncOnSaveEventRef = this.app.vault.on("modify", (file) => {
+			if (!this.settings.syncOnSave) return;
+			if (!(file instanceof TFile)) return;
+			this.scheduleSync("save");
+		});
+		this.registerEvent(this.syncOnSaveEventRef);
+	}
+
+	private unregisterSyncOnSave() {
+		if (!this.syncOnSaveEventRef) return;
+		this.app.vault.offref(this.syncOnSaveEventRef);
+		this.syncOnSaveEventRef = null;
+	}
+
+	private clearScheduledSync() {
+		if (this.syncDebounceId !== null) {
+			window.clearTimeout(this.syncDebounceId);
+			this.syncDebounceId = null;
+		}
+	}
+
+	private scheduleSync(reason: "startup" | "save") {
+		if (this.lastStatus.status === "syncing") return;
+
+		this.clearScheduledSync();
+		const delayMs = reason === "startup" ? 0 : this.syncDebounceMs;
+		this.syncDebounceId = window.setTimeout(async () => {
+			this.syncDebounceId = null;
+			await this.syncService.performSync();
+		}, delayMs);
 	}
 
 	private lastStatus: SyncStatus = { status: "idle" };
