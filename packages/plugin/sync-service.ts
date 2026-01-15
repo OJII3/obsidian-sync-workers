@@ -1,4 +1,4 @@
-import { type App, TFile, type Vault } from "obsidian";
+import { type App, MarkdownView, TFile, type Vault } from "obsidian";
 import { type BaseContentStore, getBaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
@@ -76,11 +76,6 @@ export class SyncService {
 			maxRetries: 4,
 			initialDelayMs: 2000, // 2s, 4s, 8s, 16s
 			maxDelayMs: 16000,
-			onRetry: (attempt, error, delayMs) => {
-				const errorMsg =
-					error instanceof Response ? `HTTP ${error.status}` : (error as Error).message;
-				console.log(`Retry attempt ${attempt} after ${delayMs}ms (${errorMsg})`);
-			},
 		};
 
 		// Initialize metadata cache from persisted settings
@@ -123,7 +118,6 @@ export class SyncService {
 				}
 
 				if (hasBaseContent) {
-					console.log("Migrating baseContent to IndexedDB...");
 					const count = await this.baseContentStore.migrateFromSettings(
 						this.settings.metadataCache,
 					);
@@ -134,7 +128,6 @@ export class SyncService {
 							delete metadata.baseContent;
 						}
 						await this.saveSettings();
-						console.log(`Migration complete: ${count} entries moved to IndexedDB`);
 					}
 				}
 			}
@@ -159,6 +152,16 @@ export class SyncService {
 		return retryFetch(url, init, this.retryOptions);
 	}
 
+	private async updateFileContent(file: TFile, content: string): Promise<void> {
+		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (activeView?.file?.path === file.path) {
+			activeView.editor.setValue(content);
+			return;
+		}
+
+		await this.vault.process(file, () => content);
+	}
+
 	private async persistMetadataCache(): Promise<void> {
 		// Convert Map to plain object for persistence
 		const cacheObj: Record<string, DocMetadata> = {};
@@ -179,7 +182,6 @@ export class SyncService {
 
 	async performSync(): Promise<void> {
 		if (this.syncInProgress) {
-			console.log("Sync already in progress, skipping");
 			return;
 		}
 
@@ -251,8 +253,6 @@ export class SyncService {
 
 			const data: ChangesResponse = await response.json();
 
-			console.log(`Received ${data.results.length} changes from server (since: ${since})`);
-
 			// Process changes in this batch
 			for (let i = 0; i < data.results.length; i++) {
 				const change = data.results[i];
@@ -285,8 +285,6 @@ export class SyncService {
 			// Check if there are more changes to fetch
 			hasMore = data.results.length === BATCH_SIZE;
 		}
-
-		console.log(`Pull complete: ${totalProcessed} changes processed`);
 	}
 
 	private async pullDocument(docId: string): Promise<void> {
@@ -297,7 +295,6 @@ export class SyncService {
 		const response = await this.fetchWithRetry(url);
 		if (!response.ok) {
 			if (response.status === 404) {
-				console.log(`Document ${docId} not found on server`);
 				return;
 			}
 			throw new Error(`Failed to fetch document: ${response.statusText}`);
@@ -313,13 +310,11 @@ export class SyncService {
 			// Check if we need to update
 			const localMeta = this.metadataCache.get(path);
 			if (localMeta && localMeta.rev === doc._rev) {
-				console.log(`Document ${docId} is up to date`);
 				return;
 			}
 
 			// Update file
-			await this.vault.modify(file, doc.content);
-			console.log(`Updated ${path}`);
+			await this.updateFileContent(file, doc.content);
 		} else {
 			// Create new file, ensuring parent folders exist
 			const lastSlashIndex = path.lastIndexOf("/");
@@ -342,7 +337,6 @@ export class SyncService {
 				}
 			}
 			await this.vault.create(path, doc.content);
-			console.log(`Created ${path}`);
 		}
 
 		// Update metadata cache (without baseContent - it's now in IndexedDB)
@@ -367,7 +361,6 @@ export class SyncService {
 			this.metadataCache.delete(path);
 			await this.baseContentStore.delete(path);
 			await this.persistMetadataCache();
-			console.log(`Deleted ${path}`);
 		}
 	}
 
@@ -413,12 +406,10 @@ export class SyncService {
 		}
 
 		if (docsToUpdate.length === 0) {
-			console.log("No local changes to push");
 			return;
 		}
 
 		const total = docsToUpdate.length;
-		console.log(`Pushing ${total} documents to server`);
 
 		// Update status with push phase
 		this.onStatusChange({
@@ -465,7 +456,6 @@ export class SyncService {
 					// Pull the merged content first to avoid race conditions
 					try {
 						await this.pullDocument(result.id);
-						console.log(`File automatically merged: ${path}`);
 						this.syncStats.pushed++;
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
@@ -523,14 +513,13 @@ export class SyncService {
 			try {
 				const content = await this.vault.read(file);
 				await this.forcePushDocument(result.id, content, result.current_rev);
-				console.log(`Using local version: ${path}`);
 			} catch (error) {
 				console.error(`Failed to force push ${path}:`, error);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version
 			try {
-				await this.vault.modify(file, remoteContent);
+				await this.updateFileContent(file, remoteContent);
 				this.metadataCache.set(path, {
 					path,
 					rev: result.current_rev || "",
@@ -538,13 +527,11 @@ export class SyncService {
 				});
 				await this.baseContentStore.set(path, remoteContent);
 				await this.persistMetadataCache();
-				console.log(`Using remote version: ${path}`);
 			} catch (error) {
 				console.error(`Failed to apply remote version ${path}:`, error);
 			}
 		} else {
 			// Cancel - keep local but don't sync
-			console.log(`Sync cancelled: ${path}`);
 		}
 	}
 
@@ -633,10 +620,6 @@ export class SyncService {
 
 			const data: AttachmentChangesResponse = await response.json();
 
-			console.log(
-				`Received ${data.results.length} attachment changes from server (since: ${since})`,
-			);
-
 			// Process changes in this batch
 			for (let i = 0; i < data.results.length; i++) {
 				const change = data.results[i];
@@ -670,8 +653,6 @@ export class SyncService {
 			hasMore = data.results.length === BATCH_SIZE;
 		}
 
-		console.log(`Attachment pull complete: ${totalProcessed} changes processed`);
-
 		// Persist the updated lastAttachmentSeq to prevent re-fetching on reload
 		await this.persistMetadataCache();
 	}
@@ -685,7 +666,6 @@ export class SyncService {
 		// Check if local file exists with same hash
 		const localMeta = this.attachmentCache.get(path);
 		if (localMeta && localMeta.hash === serverHash) {
-			console.log(`Attachment ${path} is up to date`);
 			return;
 		}
 
@@ -695,7 +675,6 @@ export class SyncService {
 		const response = await this.fetchWithRetry(url);
 		if (!response.ok) {
 			if (response.status === 404) {
-				console.log(`Attachment ${path} not found on server`);
 				return;
 			}
 			throw new Error(`Failed to fetch attachment: ${response.statusText}`);
@@ -729,10 +708,8 @@ export class SyncService {
 		const file = this.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) {
 			await this.vault.modifyBinary(file, data);
-			console.log(`Updated attachment ${path}`);
 		} else {
 			await this.vault.createBinary(path, data);
-			console.log(`Created attachment ${path}`);
 		}
 
 		// Update cache
@@ -753,7 +730,6 @@ export class SyncService {
 			await this.vault.delete(file);
 			this.attachmentCache.delete(path);
 			await this.persistMetadataCache();
-			console.log(`Deleted attachment ${path}`);
 		}
 	}
 
@@ -789,13 +765,8 @@ export class SyncService {
 
 		const total = attachmentsToUpload.length + deletedAttachments.length;
 		if (total === 0) {
-			console.log("No attachment changes to push");
 			return;
 		}
-
-		console.log(
-			`Pushing ${attachmentsToUpload.length} attachments (${SyncService.UPLOAD_CONCURRENCY} concurrent), deleting ${deletedAttachments.length}`,
-		);
 
 		let completed = 0;
 
@@ -872,7 +843,6 @@ export class SyncService {
 		// Check if server already has this exact file
 		const metadata = this.attachmentCache.get(file.path);
 		if (metadata && metadata.hash === hash) {
-			console.log(`Attachment ${file.path} unchanged, skipping upload`);
 			return;
 		}
 
@@ -917,7 +887,6 @@ export class SyncService {
 				contentType: result.content_type,
 				lastModified: file.stat.mtime,
 			});
-			console.log(`Uploaded attachment ${file.path}${result.unchanged ? " (unchanged)" : ""}`);
 		}
 	}
 
@@ -931,8 +900,6 @@ export class SyncService {
 		if (!response.ok && response.status !== 404) {
 			throw new Error(`Failed to delete remote attachment: ${response.statusText}`);
 		}
-
-		console.log(`Deleted remote attachment ${path}`);
 	}
 
 	private async generateHash(data: ArrayBuffer): Promise<string> {

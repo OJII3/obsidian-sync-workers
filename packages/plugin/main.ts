@@ -61,13 +61,10 @@ export default class SyncWorkersPlugin extends Plugin {
 		if (this.settings.autoSync) {
 			this.startAutoSync();
 		}
-
-		console.log("Obsidian Sync Workers plugin loaded");
 	}
 
 	onunload() {
 		this.stopAutoSync();
-		console.log("Obsidian Sync Workers plugin unloaded");
 	}
 
 	async loadSettings() {
@@ -86,19 +83,12 @@ export default class SyncWorkersPlugin extends Plugin {
 		this.syncIntervalId = window.setInterval(async () => {
 			await this.syncService.performSync();
 		}, intervalMs);
-
-		const intervalDisplay =
-			this.settings.syncInterval >= 60
-				? `${this.settings.syncInterval / 60} minutes`
-				: `${this.settings.syncInterval} seconds`;
-		console.log(`Auto sync started with interval: ${intervalDisplay}`);
 	}
 
 	stopAutoSync() {
 		if (this.syncIntervalId !== null) {
 			window.clearInterval(this.syncIntervalId);
 			this.syncIntervalId = null;
-			console.log("Auto sync stopped");
 		}
 	}
 
@@ -226,7 +216,7 @@ export default class SyncWorkersPlugin extends Plugin {
 		}
 
 		// Auto-sync status
-		message += `\n\nAuto-sync: ${this.settings.autoSync ? "ON" : "OFF"}`;
+		message += `\n\nAuto-sync: ${this.settings.autoSync ? "On" : "Off"}`;
 		if (this.settings.autoSync) {
 			const interval =
 				this.settings.syncInterval >= 60
