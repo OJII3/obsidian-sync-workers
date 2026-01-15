@@ -46,7 +46,7 @@ jobs:
         run: bun x tsc --noEmit -p packages/server/tsconfig.json
 
       - name: Type check plugin
-        run: bun run build:plugin
+        run: bun run typecheck:plugin
 
   test:
     name: Test
