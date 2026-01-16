@@ -432,4 +432,29 @@ export class Database {
 			deletedAttachmentChanges,
 		};
 	}
+
+	/**
+	 * Get the latest sequence numbers for a vault (lightweight status check)
+	 * This is optimized for frequent polling - only returns max seq numbers
+	 */
+	async getLatestSeqs(vaultId: string = "default"): Promise<{
+		lastSeq: number;
+		lastAttachmentSeq: number;
+	}> {
+		const [docSeq, attachmentSeq] = await Promise.all([
+			this.db
+				.prepare("SELECT MAX(seq) as max_seq FROM changes WHERE vault_id = ?")
+				.bind(vaultId)
+				.first<{ max_seq: number | null }>(),
+			this.db
+				.prepare("SELECT MAX(seq) as max_seq FROM attachment_changes WHERE vault_id = ?")
+				.bind(vaultId)
+				.first<{ max_seq: number | null }>(),
+		]);
+
+		return {
+			lastSeq: docSeq?.max_seq || 0,
+			lastAttachmentSeq: attachmentSeq?.max_seq || 0,
+		};
+	}
 }

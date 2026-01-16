@@ -11,6 +11,7 @@ import {
 import { changesHandler, continuousChangesHandler } from "./routes/changes";
 import { bulkDocsHandler, deleteDocHandler, getDocHandler, putDocHandler } from "./routes/docs";
 import { healthHandler } from "./routes/health";
+import { statusHandler } from "./routes/status";
 import type { Env } from "./types";
 import { authErrorResponse, requireAuth } from "./utils/auth";
 
@@ -50,6 +51,9 @@ const app = new Elysia({ aot: false })
 	});
 
 app.get("/", healthHandler());
+
+// Lightweight status endpoint for efficient polling
+app.get("/api/status", statusHandler(env));
 
 app.group("/api/changes", (app) =>
 	app.get("/", changesHandler(env)).get("/continuous", continuousChangesHandler()),

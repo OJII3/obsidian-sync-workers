@@ -123,6 +123,14 @@ export interface SyncStats {
 	attachmentsPushed: number;
 }
 
+// Lightweight status response for efficient polling
+export interface StatusResponse {
+	ok: boolean;
+	vault_id: string;
+	last_seq: number;
+	last_attachment_seq: number;
+}
+
 // Common image and binary file extensions
 export const ATTACHMENT_EXTENSIONS = [
 	// Images
