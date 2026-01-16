@@ -125,17 +125,25 @@ export class SyncService {
 
 			// Step 0: Quick status check to avoid unnecessary full sync
 			const status = await this.checkStatus();
-			const hasLocalChanges = this.hasLocalChanges();
+
+			// Check local changes separately for documents and attachments
+			const hasLocalDocChanges = this.hasLocalDocChanges();
+			const hasLocalAttachmentChanges = this.hasLocalAttachmentChanges();
 
 			// Check if there are any server changes
+			// When status API fails (status is null), default to true to ensure sync proceeds
 			const hasServerDocChanges = status ? status.last_seq > this.settings.lastSeq : true;
 			const hasServerAttachmentChanges =
-				this.settings.syncAttachments && status
-					? status.last_attachment_seq > this.settings.lastAttachmentSeq
-					: this.settings.syncAttachments;
+				this.settings.syncAttachments &&
+				(status ? status.last_attachment_seq > this.settings.lastAttachmentSeq : true);
 
 			// Skip sync if no changes on either side
-			if (!hasLocalChanges && !hasServerDocChanges && !hasServerAttachmentChanges) {
+			if (
+				!hasLocalDocChanges &&
+				!hasLocalAttachmentChanges &&
+				!hasServerDocChanges &&
+				!hasServerAttachmentChanges
+			) {
 				this.settings.lastSync = Date.now();
 				this.onStatusChange({
 					status: "success",
@@ -161,8 +169,8 @@ export class SyncService {
 				await this.documentSync.pullChanges(this.syncStats);
 			}
 
-			// Step 2: Push local document changes (only if we have local changes)
-			if (hasLocalChanges) {
+			// Step 2: Push local document changes (only if we have local doc changes)
+			if (hasLocalDocChanges) {
 				this.documentSync.setProgressCallback((current, total) => {
 					this.onStatusChange({
 						status: "syncing",
@@ -186,7 +194,7 @@ export class SyncService {
 					await this.attachmentSync.pullAttachmentChanges(this.syncStats);
 				}
 
-				if (hasLocalChanges) {
+				if (hasLocalAttachmentChanges) {
 					this.attachmentSync.setProgressCallback((current, total) => {
 						this.onStatusChange({
 							status: "syncing",
@@ -257,13 +265,14 @@ export class SyncService {
 	}
 
 	/**
-	 * Check if there are any local changes that need to be pushed
+	 * Check if there are any local document changes that need to be pushed.
+	 * Note: This scans all markdown files. For very large vaults, consider
+	 * implementing file modification event tracking for better performance.
 	 */
-	private hasLocalChanges(): boolean {
+	private hasLocalDocChanges(): boolean {
 		const files = this.vault.getMarkdownFiles();
 		const currentFilePaths = new Set<string>();
 		const metadataCache = this.metadataManager.getMetadataCache();
-		const attachmentCache = this.metadataManager.getAttachmentCache();
 
 		// Check for modified markdown files
 		for (const file of files) {
@@ -283,27 +292,38 @@ export class SyncService {
 			}
 		}
 
-		// Check attachments if enabled
-		if (this.settings.syncAttachments) {
-			const allFiles = this.vault.getFiles();
-			const attachmentFiles = allFiles.filter((file) => isAttachmentFile(file.path));
-			const currentAttachmentPaths = new Set<string>();
+		return false;
+	}
 
-			for (const file of attachmentFiles) {
-				currentAttachmentPaths.add(file.path);
-				const metadata = attachmentCache.get(file.path);
-				const fileModTime = file.stat.mtime;
+	/**
+	 * Check if there are any local attachment changes that need to be pushed.
+	 * Note: This scans all attachment files. For very large vaults, consider
+	 * implementing file modification event tracking for better performance.
+	 */
+	private hasLocalAttachmentChanges(): boolean {
+		if (!this.settings.syncAttachments) {
+			return false;
+		}
 
-				if (!metadata || fileModTime > metadata.lastModified) {
-					return true;
-				}
+		const allFiles = this.vault.getFiles();
+		const attachmentFiles = allFiles.filter((file) => isAttachmentFile(file.path));
+		const currentAttachmentPaths = new Set<string>();
+		const attachmentCache = this.metadataManager.getAttachmentCache();
+
+		for (const file of attachmentFiles) {
+			currentAttachmentPaths.add(file.path);
+			const metadata = attachmentCache.get(file.path);
+			const fileModTime = file.stat.mtime;
+
+			if (!metadata || fileModTime > metadata.lastModified) {
+				return true;
 			}
+		}
 
-			// Check for deleted attachments
-			for (const [path] of attachmentCache.entries()) {
-				if (isAttachmentFile(path) && !currentAttachmentPaths.has(path)) {
-					return true;
-				}
+		// Check for deleted attachments
+		for (const [path] of attachmentCache.entries()) {
+			if (isAttachmentFile(path) && !currentAttachmentPaths.has(path)) {
+				return true;
 			}
 		}
 
