@@ -102,6 +102,8 @@ export class SyncSettingsTab extends PluginSettingTab {
 
 		// Sync interval
 		const intervalOptions: Record<string, number> = {
+			"5 seconds": 5,
+			"10 seconds": 10,
 			"15 seconds": 15,
 			"30 seconds": 30,
 			"1 minute": 60,
@@ -112,7 +114,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 		};
 		new Setting(containerEl)
 			.setName("Sync interval")
-			.setDesc("How often to sync automatically")
+			.setDesc("How often to sync automatically (shorter intervals use lightweight status checks)")
 			.addDropdown((dropdown) => {
 				for (const [label, value] of Object.entries(intervalOptions)) {
 					dropdown.addOption(value.toString(), label);
