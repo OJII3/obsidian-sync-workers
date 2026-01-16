@@ -12,10 +12,18 @@ const EXTENSION_PATTERN = buildExtensionPattern();
 
 /**
  * Regex to match Obsidian Wikilinks image embeds: ![[image.jpg]] or ![[image.jpg|alt]]
- * Captures: full match, path, optional alt text
+ * Based on Obsidian's internal link syntax: ![[path]] or ![[path|display]]
+ * Pattern breakdown:
+ *   !\[\[           - Opening ![[
+ *   ([^|\]]+        - Capture group 1: path (any chars except | and ])
+ *   (?:...))        - Non-capturing group for extension matching
+ *   (?:\|([^\]]+))? - Optional: | followed by alt text (capture group 2)
+ *   \]\]            - Closing ]]
+ *
+ * @see https://help.obsidian.md/Linking+notes+and+files/Embed+files
  */
 const WIKILINK_IMAGE_REGEX = new RegExp(
-	`!\\[\\[([^\\]|]+(?:${EXTENSION_PATTERN}))(?:\\|([^\\]]+))?\\]\\]`,
+	`!\\[\\[([^|\\]]+(?:${EXTENSION_PATTERN}))(?:\\|([^\\]]+))?\\]\\]`,
 	"gi",
 );
 
@@ -24,7 +32,7 @@ const WIKILINK_IMAGE_REGEX = new RegExp(
  * Captures: alt text, full URL, encoded attachment ID
  */
 const R2_URL_IMAGE_REGEX =
-	/!\[([^\]]*)\]\((https?:\/\/[^)]+\/api\/attachments\/([^/]+)\/content[^)]*)\)/gi;
+	/!\[([^\]]*)\]\((https?:\/\/[^)]+\/api\/attachments\/([^/]+)\/content[^)]*)\)/g;
 
 /**
  * Generate the R2 attachment URL for a given path
@@ -110,20 +118,23 @@ export function convertRemoteUrlsToLocalPaths(
 
 /**
  * Check if content contains any Wikilinks image references that need conversion
+ * Uses a fresh regex instance to avoid lastIndex issues with global flag
  */
 export function hasLocalImageReferences(content: string): boolean {
-	WIKILINK_IMAGE_REGEX.lastIndex = 0; // Reset regex state
-	return WIKILINK_IMAGE_REGEX.test(content);
+	// Create a new regex to avoid global flag lastIndex issues
+	const testRegex = new RegExp(WIKILINK_IMAGE_REGEX.source, "i");
+	return testRegex.test(content);
 }
 
 /**
- * Check if content contains any R2 URL image references
+ * Check if content contains any R2 URL image references from our server
  */
 export function hasRemoteImageReferences(content: string, serverUrl: string): boolean {
-	R2_URL_IMAGE_REGEX.lastIndex = 0; // Reset regex state
-	const matches = content.match(R2_URL_IMAGE_REGEX);
-	if (!matches) return false;
+	// Create a new regex to avoid global flag lastIndex issues
+	const testRegex = new RegExp(R2_URL_IMAGE_REGEX.source);
+	const match = testRegex.exec(content);
+	if (!match) return false;
 
-	// Check if any match is from our server
-	return matches.some((m) => m.includes(serverUrl));
+	// Check if the URL is from our server (match[2] is the full URL)
+	return match[2]?.startsWith(serverUrl) ?? false;
 }

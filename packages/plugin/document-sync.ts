@@ -109,16 +109,22 @@ export class DocumentSync {
 				const rawContent = await this.vault.read(file);
 				const docId = pathToDocId(file.path);
 
-				// Convert R2 URLs back to Wikilinks before sending to server
-				// This ensures the server stores portable Wikilinks format
+				// Convert R2 URLs back to Wikilinks before sending to server.
+				// This ensures the server stores portable Wikilinks format.
+				// The conversion is idempotent: if content is already Wikilinks, it remains unchanged.
+				// This handles both:
+				//   - Files with R2 URLs (from previous pulls)
+				//   - Newly created files with Wikilinks (user-written)
 				const content = convertRemoteUrlsToLocalPaths(
 					rawContent,
 					this.settings.serverUrl,
 					this.settings.vaultId,
 				);
 
-				// Get baseContent from IndexedDB for 3-way merge
-				// Also convert baseContent to ensure consistent comparison
+				// Get baseContent from IndexedDB for 3-way merge.
+				// baseContent is stored in R2 URL format (matching local file after pull),
+				// so we convert it to Wikilinks for consistent server-side comparison.
+				// All three versions (base, local, remote) will be in Wikilinks format on server.
 				const rawBaseContent = await this.baseContentStore.get(file.path);
 				const baseContent = rawBaseContent
 					? convertRemoteUrlsToLocalPaths(
@@ -132,7 +138,7 @@ export class DocumentSync {
 					_id: docId,
 					_rev: metadata?.rev,
 					content,
-					_base_content: baseContent, // Send base content for 3-way merge
+					_base_content: baseContent,
 				});
 			}
 		}
