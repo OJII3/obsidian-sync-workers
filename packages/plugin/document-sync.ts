@@ -1,4 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
+import { convertLocalPathsToRemoteUrls, convertRemoteUrlsToLocalPaths } from "./attachment-url";
 import type { BaseContentStore } from "./base-content-store";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
@@ -105,11 +106,27 @@ export class DocumentSync {
 
 			// Check if file has been modified since last sync
 			if (!metadata || fileModTime > metadata.lastModified) {
-				const content = await this.vault.read(file);
+				const rawContent = await this.vault.read(file);
 				const docId = pathToDocId(file.path);
 
+				// Convert R2 URLs back to Wikilinks before sending to server
+				// This ensures the server stores portable Wikilinks format
+				const content = convertRemoteUrlsToLocalPaths(
+					rawContent,
+					this.settings.serverUrl,
+					this.settings.vaultId,
+				);
+
 				// Get baseContent from IndexedDB for 3-way merge
-				const baseContent = await this.baseContentStore.get(file.path);
+				// Also convert baseContent to ensure consistent comparison
+				const rawBaseContent = await this.baseContentStore.get(file.path);
+				const baseContent = rawBaseContent
+					? convertRemoteUrlsToLocalPaths(
+							rawBaseContent,
+							this.settings.serverUrl,
+							this.settings.vaultId,
+						)
+					: undefined;
 
 				docsToUpdate.push({
 					_id: docId,
@@ -227,6 +244,13 @@ export class DocumentSync {
 
 		const doc: DocumentResponse = await response.json();
 
+		// Convert Wikilinks image references to R2 URLs for remote viewing
+		const convertedContent = convertLocalPathsToRemoteUrls(
+			doc.content,
+			this.settings.serverUrl,
+			this.settings.vaultId,
+		);
+
 		// Check if local file exists
 		const path = docIdToPath(doc._id);
 		const file = this.vault.getAbstractFileByPath(path);
@@ -239,8 +263,8 @@ export class DocumentSync {
 				return;
 			}
 
-			// Update file
-			await updateFileContent(this.app, this.vault, file, doc.content);
+			// Update file with converted content
+			await updateFileContent(this.app, this.vault, file, convertedContent);
 		} else {
 			// Create new file, ensuring parent folders exist
 			const lastSlashIndex = path.lastIndexOf("/");
@@ -262,7 +286,7 @@ export class DocumentSync {
 					}
 				}
 			}
-			await this.vault.create(path, doc.content);
+			await this.vault.create(path, convertedContent);
 		}
 
 		// Update metadata cache (without baseContent - it's now in IndexedDB)
@@ -273,7 +297,8 @@ export class DocumentSync {
 		});
 
 		// Store baseContent in IndexedDB for future 3-way merges
-		await this.baseContentStore.set(path, doc.content);
+		// Note: Store converted content so it matches local file
+		await this.baseContentStore.set(path, convertedContent);
 
 		await this.metadataManager.persistCache();
 	}
