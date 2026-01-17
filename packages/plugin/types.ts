@@ -89,6 +89,7 @@ export interface AttachmentMetadata {
 	size: number;
 	contentType: string;
 	lastModified: number;
+	attachmentId?: string; // Content-addressable ID (vaultId:hash.ext)
 }
 
 export interface AttachmentChangeResult {
@@ -106,8 +107,7 @@ export interface AttachmentChangesResponse {
 
 export interface AttachmentUploadResponse {
 	ok: boolean;
-	id: string;
-	path: string;
+	id: string; // Content-addressable ID (vaultId:hash.ext)
 	hash: string;
 	size: number;
 	content_type: string;

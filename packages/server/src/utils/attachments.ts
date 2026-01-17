@@ -48,17 +48,45 @@ export function validateAttachmentPath(path: string): boolean {
 }
 
 /**
- * Generate attachment ID from vault ID and path
+ * Extract file extension from path
  */
-export function generateAttachmentId(vaultId: string, path: string): string {
-	return `${vaultId}:${path}`;
+export function getExtension(path: string): string {
+	const lastDot = path.lastIndexOf(".");
+	if (lastDot === -1) return "";
+	return path.slice(lastDot).toLowerCase();
 }
 
 /**
- * Generate R2 key for attachment storage
+ * Generate attachment ID from vault ID and hash (content-addressable)
+ * Format: {vaultId}:{hash}{extension}
+ * Example: myvault:a1b2c3d4e5f6.jpg
  */
-export function generateR2Key(vaultId: string, path: string, hash: string): string {
-	return `${vaultId}/${hash}/${path}`;
+export function generateAttachmentId(vaultId: string, hash: string, path: string): string {
+	const ext = getExtension(path);
+	return `${vaultId}:${hash}${ext}`;
+}
+
+/**
+ * Generate R2 key for attachment storage (content-addressable)
+ * Format: {vaultId}/{hash}{extension}
+ * Example: myvault/a1b2c3d4e5f6.jpg
+ */
+export function generateR2Key(vaultId: string, hash: string, path: string): string {
+	const ext = getExtension(path);
+	return `${vaultId}/${hash}${ext}`;
+}
+
+/**
+ * Parse attachment ID to extract vault ID and hash+extension
+ * Returns null if invalid format
+ */
+export function parseAttachmentId(id: string): { vaultId: string; hashWithExt: string } | null {
+	const colonIndex = id.indexOf(":");
+	if (colonIndex === -1) return null;
+	return {
+		vaultId: id.slice(0, colonIndex),
+		hashWithExt: id.slice(colonIndex + 1),
+	};
 }
 
 /**

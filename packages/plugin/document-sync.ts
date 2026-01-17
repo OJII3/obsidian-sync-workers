@@ -1,5 +1,4 @@
 import { type App, TFile, type Vault } from "obsidian";
-import { convertLocalPathsToRemoteUrls, convertRemoteUrlsToLocalPaths } from "./attachment-url";
 import type { BaseContentStore } from "./base-content-store";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
@@ -106,33 +105,11 @@ export class DocumentSync {
 
 			// Check if file has been modified since last sync
 			if (!metadata || fileModTime > metadata.lastModified) {
-				const rawContent = await this.vault.read(file);
+				const content = await this.vault.read(file);
 				const docId = pathToDocId(file.path);
 
-				// Convert R2 URLs back to Wikilinks before sending to server.
-				// This ensures the server stores portable Wikilinks format.
-				// The conversion is idempotent: if content is already Wikilinks, it remains unchanged.
-				// This handles both:
-				//   - Files with R2 URLs (from previous pulls)
-				//   - Newly created files with Wikilinks (user-written)
-				const content = convertRemoteUrlsToLocalPaths(
-					rawContent,
-					this.settings.serverUrl,
-					this.settings.vaultId,
-				);
-
-				// Get baseContent from IndexedDB for 3-way merge.
-				// baseContent is stored in R2 URL format (matching local file after pull),
-				// so we convert it to Wikilinks for consistent server-side comparison.
-				// All three versions (base, local, remote) will be in Wikilinks format on server.
-				const rawBaseContent = await this.baseContentStore.get(file.path);
-				const baseContent = rawBaseContent
-					? convertRemoteUrlsToLocalPaths(
-							rawBaseContent,
-							this.settings.serverUrl,
-							this.settings.vaultId,
-						)
-					: undefined;
+				// Get baseContent from IndexedDB for 3-way merge
+				const baseContent = await this.baseContentStore.get(file.path);
 
 				docsToUpdate.push({
 					_id: docId,
@@ -249,13 +226,7 @@ export class DocumentSync {
 		}
 
 		const doc: DocumentResponse = await response.json();
-
-		// Convert Wikilinks image references to R2 URLs for remote viewing
-		const convertedContent = convertLocalPathsToRemoteUrls(
-			doc.content,
-			this.settings.serverUrl,
-			this.settings.vaultId,
-		);
+		const content = doc.content;
 
 		// Check if local file exists
 		const path = docIdToPath(doc._id);
@@ -269,8 +240,8 @@ export class DocumentSync {
 				return;
 			}
 
-			// Update file with converted content
-			await updateFileContent(this.app, this.vault, file, convertedContent);
+			// Update file with content
+			await updateFileContent(this.app, this.vault, file, content);
 		} else {
 			// Create new file, ensuring parent folders exist
 			const lastSlashIndex = path.lastIndexOf("/");
@@ -292,7 +263,7 @@ export class DocumentSync {
 					}
 				}
 			}
-			await this.vault.create(path, convertedContent);
+			await this.vault.create(path, content);
 		}
 
 		// Update metadata cache (without baseContent - it's now in IndexedDB)
@@ -303,8 +274,7 @@ export class DocumentSync {
 		});
 
 		// Store baseContent in IndexedDB for future 3-way merges
-		// Note: Store converted content so it matches local file
-		await this.baseContentStore.set(path, convertedContent);
+		await this.baseContentStore.set(path, content);
 
 		await this.metadataManager.persistCache();
 	}

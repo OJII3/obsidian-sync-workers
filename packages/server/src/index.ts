@@ -87,10 +87,10 @@ app.group("/api/attachments", (app) =>
 		.get("/:id", attachmentMetaHandler(env))
 		// Download attachment content
 		.get("/:id/content", attachmentContentHandler(env))
-		// Upload attachment
+		// Upload attachment (path is the original file path for reference)
 		.put("/:path", uploadAttachmentHandler(env))
-		// Delete attachment
-		.delete("/:path", deleteAttachmentHandler(env)),
+		// Delete attachment by ID (content-addressable ID format: vaultId:hash.ext)
+		.delete("/:id", deleteAttachmentHandler(env)),
 );
 
 app.group("/api/admin", (app) =>
