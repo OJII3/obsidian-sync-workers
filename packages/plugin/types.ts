@@ -119,7 +119,6 @@ export interface SyncStats {
 	pushed: number;
 	conflicts: number;
 	errors: number;
-	attachmentsPulled: number;
 	attachmentsPushed: number;
 }
 
