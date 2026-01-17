@@ -11,14 +11,14 @@
 
 ### 主な機能
 
-- ✅ ドキュメントのCRUD操作
-- ✅ リビジョン管理と競合検出
-- ✅ 変更フィード（増分同期）
-- ✅ 論理削除
-- ✅ 一括ドキュメント操作
-- ✅ マルチVault対応
-- ✅ 自動同期
-- ✅ 手動同期トリガー
+- ドキュメントのCRUD操作
+- リビジョン管理と競合検出
+- 変更フィード（増分同期）
+- 論理削除
+- マルチVault対応
+- 自動同期 / 手動同期
+- 競合解決UI（自動マージ + 手動選択）
+- アタッチメント同期（R2）
 
 ## アーキテクチャ
 
@@ -27,7 +27,7 @@ Obsidian Plugin (Client)
     ↓
 Cloudflare Workers (Elysia Framework)
     ↓
-D1 Database (SQLite)
+D1 Database (SQLite) + R2 (Attachments)
 ```
 
 ## セットアップ
@@ -44,7 +44,6 @@ D1 Database (SQLite)
 git clone https://github.com/OJII3/obsidian-sync-workers.git
 cd obsidian-sync-workers
 
-# Bunを使用してインストール
 bun install
 ```
 
@@ -55,11 +54,8 @@ bun install
 ```bash
 cd packages/server
 
-# D1データベースを作成
 wrangler d1 create obsidian-sync
-
 # 出力されたdatabase_idをwrangler.tomlに設定
-# [[d1_databases]]セクションのdatabase_idを更新してください
 ```
 
 ### 2. データベーススキーマの適用
@@ -86,8 +82,6 @@ bun run dev:server
 
 ### 4. デプロイ
 
-#### 手動デプロイ
-
 ```bash
 # packages/server ディレクトリから
 bun run deploy
@@ -95,12 +89,6 @@ bun run deploy
 # またはルートディレクトリから
 bun run build:server
 ```
-
-#### 自動デプロイ
-
-mainブランチにpushすると、GitHub Actionsが自動的にCloudflare Workersにデプロイします。
-
-詳細な設定方法は `packages/server/README.md` を参照してください。
 
 ## プラグインのセットアップ
 
@@ -113,8 +101,6 @@ bun run dev
 # またはルートディレクトリから
 bun run dev:plugin
 ```
-
-開発モードでは、ファイルの変更を監視して自動的に再ビルドします。
 
 ### ビルド
 
@@ -138,7 +124,6 @@ bun run build:plugin
    ```
 
 2. Obsidianを再起動
-
 3. Settings → Community plugins → Obsidian Sync Workers を有効化
 
 ### プラグインの設定
@@ -167,105 +152,6 @@ bun run build:plugin
 - `Sync now` - 即座に同期を実行
 - `Toggle auto sync` - 自動同期のオン/オフを切り替え
 
-## API リファレンス
-
-### サーバーAPI
-
-詳細は `packages/server/README.md` を参照してください。
-
-#### ドキュメント操作
-
-- `GET /api/docs/:id` - ドキュメントを取得
-- `PUT /api/docs/:id` - ドキュメントを作成または更新
-- `DELETE /api/docs/:id` - ドキュメントを削除
-- `POST /api/docs/bulk_docs` - 一括ドキュメント操作
-
-#### 変更フィード
-
-- `GET /api/changes` - 変更リストを取得
-
-#### デバッグ
-
-- `GET /api/debug/docs` - すべてのドキュメントを取得
-
-## データベーススキーマ
-
-### documents テーブル
-
-| カラム | 型 | 説明 |
-|--------|------|------|
-| id | TEXT | ドキュメントID（プライマリキー） |
-| vault_id | TEXT | Vault識別子 |
-| content | TEXT | ドキュメント内容 |
-| rev | TEXT | リビジョン番号 |
-| deleted | INTEGER | 削除フラグ（0 or 1） |
-| created_at | INTEGER | 作成タイムスタンプ |
-| updated_at | INTEGER | 更新タイムスタンプ |
-
-### revisions テーブル
-
-| カラム | 型 | 説明 |
-|--------|------|------|
-| id | INTEGER | 自動採番ID |
-| doc_id | TEXT | ドキュメントID |
-| rev | TEXT | リビジョン番号 |
-| content | TEXT | その時点のドキュメント内容 |
-| deleted | INTEGER | 削除フラグ |
-| created_at | INTEGER | 作成タイムスタンプ |
-
-### changes テーブル
-
-| カラム | 型 | 説明 |
-|--------|------|------|
-| seq | INTEGER | シーケンス番号（自動採番） |
-| doc_id | TEXT | ドキュメントID |
-| rev | TEXT | リビジョン番号 |
-| deleted | INTEGER | 削除フラグ |
-| vault_id | TEXT | Vault識別子 |
-| created_at | INTEGER | 作成タイムスタンプ |
-
-## リビジョン管理
-
-リビジョンは `{generation}-{hash}` の形式です：
-
-- 例: `1-abc123`, `2-def456`, `3-xyz789`
-- `generation`は更新ごとにインクリメント
-- `hash`はタイムスタンプとランダム値から生成
-
-### 競合検出
-
-ドキュメント更新時に、提供された `_rev` が現在のリビジョンと一致しない場合、409 Conflictエラーを返します。
-
-## プロジェクト構成
-
-```
-obsidian-sync-workers/
-├── packages/
-│   ├── server/              # Cloudflare Workersサーバー
-│   │   ├── src/
-│   │   │   ├── index.ts     # Workerエントリーポイント
-│   │   │   ├── types.ts     # TypeScript型定義
-│   │   │   ├── db/
-│   │   │   │   ├── schema.sql   # D1スキーマ
-│   │   │   │   └── queries.ts   # データベースクエリ
-│   │   │   └── utils/
-│   │   │       ├── revision.ts  # リビジョン管理
-│   │   │       └── auth.ts      # 認証ヘルパー
-│   │   ├── wrangler.toml    # Cloudflare設定
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   └── plugin/              # Obsidianプラグイン
-│       ├── main.ts          # プラグインエントリーポイント
-│       ├── sync-service.ts  # 同期サービス
-│       ├── settings.ts      # 設定タブ
-│       ├── types.ts         # TypeScript型定義
-│       ├── manifest.json    # プラグインマニフェスト
-│       ├── package.json
-│       └── tsconfig.json
-├── package.json             # ルートpackage.json（workspacesを含む）
-└── README.md
-```
-
 ## トラブルシューティング
 
 ### サーバーに接続できない
@@ -286,72 +172,14 @@ obsidian-sync-workers/
 2. `main.js` がビルドされているか確認
 3. Obsidianを再起動
 
-## セキュリティ
+## 仕様・開発メモ
 
-### API認証（オプション）
+仕様や内部実装の詳細は `CLAUDE.md`、各パッケージの開発メモは以下を参照してください。
 
-環境変数 `API_KEY` を設定することで、API認証を有効化できます。詳細は `packages/server/README.md` を参照してください。
-
-## 制限事項
-
-現在のバージョンでは以下の機能は実装されていません：
-
-- アタッチメント/バイナリファイル対応
-- WebSocketによるリアルタイム通知
-- エンドツーエンド暗号化
-- CouchDBのview/query機能
-- 差分同期（現在はファイル全体を同期）
-
-### 実装済み機能
-
-- ✅ 3-way mergeによる自動競合解決
-- ✅ 競合解決UI（local/remote選択）
-
-## 開発
-
-### プラグイン開発ガイドライン
-
-Obsidianのプラグインガイドラインに合わせ、以下を遵守します。
-
-- UIテキストはSentence case（先頭のみ大文字、固有名詞は例外）
-- 設定画面の見出しは複数セクション時のみ使用し、`setHeading` を使う
-- 既定ではコンソールにエラー以外のログを出さない
-- アクティブノートの更新はEditor APIを優先し、背景更新は `Vault.process` を使用
-
-### 両方のパッケージを同時に開発
-
-```bash
-# ターミナル1: サーバー
-bun run dev:server
-
-# ターミナル2: プラグイン
-bun run dev:plugin
-```
-
-### テスト
-
-```bash
-# サーバーのテスト
-cd packages/server
-bun run dev
-
-# 別のターミナルで
-curl http://localhost:8787/
-curl -X PUT http://localhost:8787/api/docs/test1 \
-  -H "Content-Type: application/json" \
-  -d '{"_id": "test1", "content": "Test content"}'
-curl http://localhost:8787/api/docs/test1
-curl http://localhost:8787/api/changes
-```
+- `CLAUDE.md`
+- `packages/server/CLAUDE.md`
+- `packages/plugin/CLAUDE.md`
 
 ## ライセンス
 
 MIT
-
-## 参考
-
-- [obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync) - オリジナルプロジェクト
-- [Cloudflare Workers](https://workers.cloudflare.com/)
-- [Cloudflare D1](https://developers.cloudflare.com/d1/)
-- [Elysia](https://elysiajs.com/)
-- [Obsidian Plugin Developer Docs](https://docs.obsidian.md/)
