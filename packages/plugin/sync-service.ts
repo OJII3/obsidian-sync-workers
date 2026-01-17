@@ -15,7 +15,7 @@ export interface SyncStatus {
 	message?: string;
 	duration?: string;
 	progress?: {
-		phase: "pull" | "push" | "pull-attachments" | "push-attachments";
+		phase: "pull" | "push" | "push-attachments";
 		current: number;
 		total: number;
 	};
@@ -38,7 +38,6 @@ export class SyncService {
 		pushed: 0,
 		conflicts: 0,
 		errors: 0,
-		attachmentsPulled: 0,
 		attachmentsPushed: 0,
 	};
 	private retryOptions: RetryOptions;
@@ -116,7 +115,6 @@ export class SyncService {
 			pushed: 0,
 			conflicts: 0,
 			errors: 0,
-			attachmentsPulled: 0,
 			attachmentsPushed: 0,
 		};
 
