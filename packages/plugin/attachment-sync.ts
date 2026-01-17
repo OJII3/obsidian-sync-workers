@@ -1,4 +1,5 @@
 import { TFile, type Vault } from "obsidian";
+import { generateAttachmentUrlFromId } from "./attachment-url";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import type {
@@ -89,82 +90,136 @@ export class AttachmentSync {
 	async pushAttachmentChanges(syncStats: SyncStats): Promise<void> {
 		const files = this.vault.getFiles();
 		const attachmentFiles = files.filter((file) => isAttachmentFile(file.path));
-		const currentAttachmentPaths = new Set<string>();
 		const attachmentCache = this.metadataManager.getAttachmentCache();
 
 		const attachmentsToUpload: TFile[] = [];
 
 		// Check for new or modified attachments
 		for (const file of attachmentFiles) {
-			currentAttachmentPaths.add(file.path);
 			const metadata = attachmentCache.get(file.path);
 			const fileModTime = file.stat.mtime;
 
-			// Check if file has been modified since last sync
-			if (!metadata || fileModTime > metadata.lastModified) {
+			// Check if file has been modified since last sync or doesn't have attachment ID yet
+			if (!metadata || fileModTime > metadata.lastModified || !metadata.attachmentId) {
 				attachmentsToUpload.push(file);
 			}
 		}
 
-		// Check for deleted attachments
-		const deletedAttachments: string[] = [];
-		for (const [path] of attachmentCache.entries()) {
-			if (isAttachmentFile(path) && !currentAttachmentPaths.has(path)) {
-				deletedAttachments.push(path);
-			}
-		}
-
-		const total = attachmentsToUpload.length + deletedAttachments.length;
+		const total = attachmentsToUpload.length;
 		if (total === 0) {
 			return;
 		}
 
 		let completed = 0;
 
+		// Collect successful uploads for batch processing
+		const uploadedAttachments: Array<{
+			file: TFile;
+			id: string;
+			hash: string;
+			url: string;
+		}> = [];
+
 		// Upload new/modified attachments in parallel with concurrency limit
-		// This is inspired by s3-image-uploader's Promise.all pattern for parallel uploads
 		for (let i = 0; i < attachmentsToUpload.length; i += AttachmentSync.UPLOAD_CONCURRENCY) {
 			const chunk = attachmentsToUpload.slice(i, i + AttachmentSync.UPLOAD_CONCURRENCY);
 
 			const uploadResults = await Promise.allSettled(
 				chunk.map(async (file) => {
-					await this.uploadAttachment(file);
-					return file.path;
+					const result = await this.uploadAttachment(file);
+					return { file, result };
 				}),
 			);
 
-			// Process results - use index to track which file corresponds to each result
+			// Process results
 			for (let j = 0; j < uploadResults.length; j++) {
 				const result = uploadResults[j];
 				const file = chunk[j];
 				completed++;
 				this.onProgress?.(completed, total);
 
-				if (result.status === "fulfilled") {
+				if (result.status === "fulfilled" && result.value.result) {
+					uploadedAttachments.push({
+						file,
+						...result.value.result,
+					});
 					syncStats.attachmentsPushed++;
-				} else {
+				} else if (result.status === "rejected") {
 					console.error(`Failed to upload attachment ${file.path}:`, result.reason);
 					syncStats.errors++;
 				}
 			}
 		}
 
-		// Delete remote attachments (sequential to avoid race conditions)
-		for (const path of deletedAttachments) {
-			completed++;
-			this.onProgress?.(completed, total);
-
-			try {
-				await this.deleteRemoteAttachment(path);
-				attachmentCache.delete(path);
-				syncStats.attachmentsPushed++;
-			} catch (error) {
-				console.error(`Failed to delete remote attachment ${path}:`, error);
-				syncStats.errors++;
-			}
+		// After all uploads, update markdown references and delete local files
+		if (uploadedAttachments.length > 0) {
+			await this.updateMarkdownReferencesAndCleanup(uploadedAttachments);
 		}
 
 		await this.metadataManager.persistCache();
+	}
+
+	/**
+	 * Update markdown files to replace local image references with R2 URLs,
+	 * then delete the local attachment files
+	 */
+	private async updateMarkdownReferencesAndCleanup(
+		uploadedAttachments: Array<{
+			file: TFile;
+			id: string;
+			hash: string;
+			url: string;
+		}>,
+	): Promise<void> {
+		const markdownFiles = this.vault.getMarkdownFiles();
+		const attachmentCache = this.metadataManager.getAttachmentCache();
+
+		// Build a map of path -> url for quick lookup
+		const pathToUrlMap = new Map<string, string>();
+		for (const attachment of uploadedAttachments) {
+			pathToUrlMap.set(attachment.file.path, attachment.url);
+			// Also add the filename without path for wikilinks like ![[image.jpg]]
+			const fileName = attachment.file.name;
+			if (!pathToUrlMap.has(fileName)) {
+				pathToUrlMap.set(fileName, attachment.url);
+			}
+		}
+
+		// Update each markdown file that references uploaded attachments
+		for (const mdFile of markdownFiles) {
+			let content = await this.vault.read(mdFile);
+			let modified = false;
+
+			// Replace wikilink image references: ![[path]] or ![[path|alt]]
+			const wikilinkRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+			content = content.replace(wikilinkRegex, (match, path, altText) => {
+				const url = pathToUrlMap.get(path);
+				if (url) {
+					modified = true;
+					const displayText = altText || path;
+					return `![${displayText}](${url})`;
+				}
+				return match;
+			});
+
+			if (modified) {
+				await this.vault.modify(mdFile, content);
+			}
+		}
+
+		// Delete local attachment files after updating references
+		for (const attachment of uploadedAttachments) {
+			try {
+				const file = this.vault.getAbstractFileByPath(attachment.file.path);
+				if (file instanceof TFile) {
+					await this.vault.delete(file);
+					// Remove from cache since file is deleted
+					attachmentCache.delete(attachment.file.path);
+				}
+			} catch (error) {
+				console.error(`Failed to delete local attachment ${attachment.file.path}:`, error);
+			}
+		}
 	}
 
 	private async pullAttachment(id: string, path: string, serverHash: string): Promise<void> {
@@ -246,7 +301,12 @@ export class AttachmentSync {
 		}
 	}
 
-	private async uploadAttachment(file: TFile): Promise<void> {
+	/**
+	 * Upload attachment and return the result with attachment ID and URL
+	 */
+	private async uploadAttachment(
+		file: TFile,
+	): Promise<{ id: string; hash: string; url: string } | null> {
 		const data = await this.vault.readBinary(file);
 
 		// Validate file size
@@ -260,10 +320,15 @@ export class AttachmentSync {
 		const contentType = getContentType(file.path);
 		const attachmentCache = this.metadataManager.getAttachmentCache();
 
-		// Check if server already has this exact file
+		// Check if already uploaded with same hash - return existing info
 		const metadata = attachmentCache.get(file.path);
-		if (metadata && metadata.hash === hash) {
-			return;
+		if (metadata && metadata.hash === hash && metadata.attachmentId) {
+			const url = generateAttachmentUrlFromId(
+				metadata.attachmentId,
+				this.settings.serverUrl,
+				this.settings.vaultId,
+			);
+			return { id: metadata.attachmentId, hash, url };
 		}
 
 		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(file.path)}?vault_id=${this.settings.vaultId}`;
@@ -304,30 +369,27 @@ export class AttachmentSync {
 		const result: AttachmentUploadResponse = await response.json();
 
 		if (result.ok) {
+			const attachmentId = result.id;
+			const attachmentUrl = generateAttachmentUrlFromId(
+				attachmentId,
+				this.settings.serverUrl,
+				this.settings.vaultId,
+			);
+
+			// Update cache with attachment ID
 			attachmentCache.set(file.path, {
 				path: file.path,
 				hash: result.hash,
 				size: result.size,
 				contentType: result.content_type,
 				lastModified: file.stat.mtime,
+				attachmentId,
 			});
+
+			return { id: attachmentId, hash: result.hash, url: attachmentUrl };
 		}
-	}
 
-	private async deleteRemoteAttachment(path: string): Promise<void> {
-		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(path)}?vault_id=${this.settings.vaultId}`;
-
-		const response = await retryFetch(
-			url,
-			{
-				method: "DELETE",
-			},
-			this.retryOptions,
-		);
-
-		if (!response.ok && response.status !== 404) {
-			throw new Error(`Failed to delete remote attachment: ${response.statusText}`);
-		}
+		return null;
 	}
 
 	private async generateHash(data: ArrayBuffer): Promise<string> {

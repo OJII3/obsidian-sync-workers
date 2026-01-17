@@ -188,16 +188,17 @@ export function uploadAttachmentHandler(env: Env) {
 		}
 
 		const db = new Database(env.DB);
-		const id = generateAttachmentId(vaultId, path);
+		// Use content-addressable ID based on hash
+		const id = generateAttachmentId(vaultId, hash, path);
+		const r2Key = generateR2Key(vaultId, hash, path);
 
-		// Check if attachment with same hash already exists
+		// Check if attachment with same hash already exists (content-addressable)
 		const existing = await db.getAttachment(id, vaultId);
-		if (existing && existing.hash === hash && existing.deleted === 0) {
-			// Same content, no need to upload
+		if (existing && existing.deleted === 0) {
+			// Same content already exists, no need to upload
 			return {
 				ok: true,
 				id,
-				path,
 				hash,
 				size,
 				content_type: contentType,
@@ -205,20 +206,18 @@ export function uploadAttachmentHandler(env: Env) {
 			};
 		}
 
-		// Generate R2 key and upload
-		const r2Key = generateR2Key(vaultId, path, hash);
+		// Upload to R2
 		await env.ATTACHMENTS.put(r2Key, data, {
 			httpMetadata: {
 				contentType,
 			},
 			customMetadata: {
 				vaultId,
-				path,
 				hash,
 			},
 		});
 
-		// Save metadata to database
+		// Save metadata to database (path is kept for reference/debugging)
 		await db.upsertAttachment({
 			id,
 			vaultId,
@@ -233,7 +232,6 @@ export function uploadAttachmentHandler(env: Env) {
 		return {
 			ok: true,
 			id,
-			path,
 			hash,
 			size,
 			content_type: contentType,
@@ -244,19 +242,17 @@ export function uploadAttachmentHandler(env: Env) {
 export function deleteAttachmentHandler(env: Env) {
 	return async (context: any) => {
 		const { params, query, set } = context;
-		const path = decodeURIComponent(params.path);
+		const id = decodeURIComponent(params.id);
 		const vaultId = query.vault_id || "default";
 
-		// Validate path to prevent directory traversal attacks
-		if (!validateAttachmentPath(path)) {
-			set.status = 400;
-			return {
-				error: "Invalid path: must be relative and not contain directory traversal patterns",
-			};
+		// Verify the attachment ID belongs to the requested vault
+		const expectedPrefix = `${vaultId}:`;
+		if (!id.startsWith(expectedPrefix)) {
+			set.status = 403;
+			return { error: "Access denied: vault mismatch" };
 		}
 
 		const db = new Database(env.DB);
-		const id = generateAttachmentId(vaultId, path);
 		const existing = await db.getAttachment(id, vaultId);
 
 		if (!existing) {
