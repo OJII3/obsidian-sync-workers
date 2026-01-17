@@ -369,6 +369,129 @@ R2キーにはファイルパスが含まれているため、**同じコンテ�
 - `packages/plugin/sync-service.ts`: アタッチメント同期ロジック
 - `packages/plugin/types.ts`: アタッチメント関連の型定義
 
+## API リファレンス（サーバー）
+
+### ドキュメント操作
+
+- `GET /api/docs/:id` - ドキュメントを取得
+- `PUT /api/docs/:id` - ドキュメントを作成または更新
+- `DELETE /api/docs/:id` - ドキュメントを削除
+- `POST /api/docs/bulk_docs` - 一括ドキュメント操作
+
+### 変更フィード
+
+- `GET /api/changes` - 変更リストを取得
+
+### デバッグ（ローカル環境専用）
+
+- `GET /api/debug/docs` - すべてのドキュメントを取得
+
+### アタッチメント
+
+- `GET /api/attachments/changes` - アタッチメント変更フィード
+- `GET /api/attachments/:id` - メタデータ取得
+- `GET /api/attachments/:id/content` - コンテンツダウンロード
+- `PUT /api/attachments/:path` - アップロード
+- `DELETE /api/attachments/:path` - 削除
+
+## データベーススキーマ（主要テーブル）
+
+### documents テーブル
+
+| カラム | 型 | 説明 |
+|--------|------|------|
+| id | TEXT | ドキュメントID（プライマリキー） |
+| vault_id | TEXT | Vault識別子 |
+| content | TEXT | ドキュメント内容 |
+| rev | TEXT | リビジョン番号 |
+| deleted | INTEGER | 削除フラグ（0 or 1） |
+| created_at | INTEGER | 作成タイムスタンプ |
+| updated_at | INTEGER | 更新タイムスタンプ |
+
+### revisions テーブル
+
+| カラム | 型 | 説明 |
+|--------|------|------|
+| id | INTEGER | 自動採番ID |
+| doc_id | TEXT | ドキュメントID |
+| rev | TEXT | リビジョン番号 |
+| content | TEXT | その時点のドキュメント内容 |
+| deleted | INTEGER | 削除フラグ |
+| created_at | INTEGER | 作成タイムスタンプ |
+
+### changes テーブル
+
+| カラム | 型 | 説明 |
+|--------|------|------|
+| seq | INTEGER | シーケンス番号（自動採番） |
+| doc_id | TEXT | ドキュメントID |
+| rev | TEXT | リビジョン番号 |
+| deleted | INTEGER | 削除フラグ |
+| vault_id | TEXT | Vault識別子 |
+| created_at | INTEGER | 作成タイムスタンプ |
+
+## リビジョン管理
+
+リビジョンは `{generation}-{hash}` の形式です：
+
+- 例: `1-abc123`, `2-def456`, `3-xyz789`
+- `generation`は更新ごとにインクリメント
+- `hash`はタイムスタンプとランダム値から生成
+
+### 競合検出
+
+ドキュメント更新時に、提供された `_rev` が現在のリビジョンと一致しない場合、409 Conflictエラーを返します。
+
+## プラグイン開発ガイドライン
+
+Obsidianのプラグインガイドラインに合わせ、以下を遵守します。
+
+- UIテキストはSentence case（先頭のみ大文字、固有名詞は例外）
+- 設定画面の見出しは複数セクション時のみ使用し、`setHeading` を使う
+- 既定ではコンソールにエラー以外のログを出さない
+- アクティブノートの更新はEditor APIを優先し、背景更新は `Vault.process` を使用
+
+## テスト（手動）
+
+```bash
+# サーバー起動
+bun run dev
+
+# ドキュメント作成
+curl -X PUT http://localhost:8787/api/docs/test1 \
+  -H "Content-Type: application/json" \
+  -d '{"_id": "test1", "content": "Test content"}'
+
+# ドキュメント取得
+curl http://localhost:8787/api/docs/test1
+
+# 変更フィード確認
+curl http://localhost:8787/api/changes
+
+# すべてのドキュメント確認
+curl http://localhost:8787/api/debug/docs
+```
+
+## トラブルシューティング
+
+### サーバーに接続できない
+
+1. サーバーが起動しているか確認
+2. Server URLが正しいか確認
+3. CORSエラーの場合、サーバー側のCORS設定を確認
+
+### 同期が動作しない
+
+1. Test connection で接続をテスト
+2. ブラウザのコンソールログを確認
+3. サーバーのログを確認
+
+### プラグインが表示されない
+
+1. プラグインフォルダに正しくコピーされているか確認
+2. `main.js` がビルドされているか確認
+3. Obsidianを再起動
+
 ## 最終更新
 
 2026-01-12: R2によるアタッチメント（画像・バイナリファイル）同期機能を実装
