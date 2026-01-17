@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type AuthContext, authErrorResponse, requireAuth } from "../auth";
+import { type AuthContext, authErrorResponse, isPublicPath, requireAuth } from "../auth";
 
 function createMockContext(options: {
 	authHeader?: string | null;
@@ -80,6 +80,32 @@ describe("auth", () => {
 			const response = authErrorResponse();
 			expect(response.error).toBe("Unauthorized");
 			expect(response.message).toContain("API key");
+		});
+	});
+
+	describe("isPublicPath", () => {
+		test("should return true for attachment content path", () => {
+			expect(isPublicPath("/api/attachments/default%3Aimage.jpg/content")).toBe(true);
+		});
+
+		test("should return true for attachment content with encoded path", () => {
+			expect(isPublicPath("/api/attachments/default%3Afolder%2Fimage.png/content")).toBe(true);
+		});
+
+		test("should return false for attachment metadata path", () => {
+			expect(isPublicPath("/api/attachments/default%3Aimage.jpg")).toBe(false);
+		});
+
+		test("should return false for attachment changes path", () => {
+			expect(isPublicPath("/api/attachments/changes")).toBe(false);
+		});
+
+		test("should return false for docs path", () => {
+			expect(isPublicPath("/api/docs/test-doc")).toBe(false);
+		});
+
+		test("should return false for content path with extra segments", () => {
+			expect(isPublicPath("/api/attachments/id/content/extra")).toBe(false);
 		});
 	});
 });

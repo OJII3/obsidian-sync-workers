@@ -13,7 +13,7 @@ import { bulkDocsHandler, deleteDocHandler, getDocHandler, putDocHandler } from 
 import { healthHandler } from "./routes/health";
 import { statusHandler } from "./routes/status";
 import type { Env } from "./types";
-import { authErrorResponse, requireAuth } from "./utils/auth";
+import { authErrorResponse, isPublicPath, requireAuth } from "./utils/auth";
 
 const env = cfEnv as Env;
 
@@ -34,6 +34,11 @@ const app = new Elysia({ aot: false })
 	.onBeforeHandle(({ request, set, path }) => {
 		// Skip auth for health check endpoint and OPTIONS requests
 		if (path === "/" || request.method === "OPTIONS") {
+			return;
+		}
+
+		// Skip auth for public paths (e.g., attachment content for direct browser access)
+		if (isPublicPath(path)) {
 			return;
 		}
 
