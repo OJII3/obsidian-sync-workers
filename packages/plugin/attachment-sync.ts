@@ -1,5 +1,5 @@
 import { TFile, type Vault } from "obsidian";
-import { generateAttachmentUrlFromId } from "./attachment-url";
+import { generateAttachmentUrlFromId, WIKILINK_IMAGE_REGEX } from "./attachment-url";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import type {
@@ -191,8 +191,9 @@ export class AttachmentSync {
 			let modified = false;
 
 			// Replace wikilink image references: ![[path]] or ![[path|alt]]
-			const wikilinkRegex = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-			content = content.replace(wikilinkRegex, (match, path, altText) => {
+			// Reset lastIndex since regex has global flag
+			WIKILINK_IMAGE_REGEX.lastIndex = 0;
+			content = content.replace(WIKILINK_IMAGE_REGEX, (match, path, altText) => {
 				const url = pathToUrlMap.get(path);
 				if (url) {
 					modified = true;
