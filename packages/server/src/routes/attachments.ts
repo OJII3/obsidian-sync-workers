@@ -85,6 +85,14 @@ export function attachmentContentHandler(env: Env) {
 		const id = decodeURIComponent(params.id);
 		const vaultId = query.vault_id || "default";
 
+		// Security: Verify that the attachment ID belongs to the requested vault
+		// ID format is "vaultId:path", so we check that the ID starts with the correct vault prefix
+		const expectedPrefix = `${vaultId}:`;
+		if (!id.startsWith(expectedPrefix)) {
+			set.status = 403;
+			return { error: "Access denied: vault mismatch" };
+		}
+
 		const db = new Database(env.DB);
 		const attachment = await db.getAttachment(id, vaultId);
 
