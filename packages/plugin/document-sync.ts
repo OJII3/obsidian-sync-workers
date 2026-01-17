@@ -1,4 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
+import { WIKILINK_IMAGE_REGEX } from "./attachment-url";
 import type { BaseContentStore } from "./base-content-store";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
@@ -106,6 +107,13 @@ export class DocumentSync {
 			// Check if file has been modified since last sync
 			if (!metadata || fileModTime > metadata.lastModified) {
 				const content = await this.vault.read(file);
+
+				// Skip documents with unresolved local image references
+				// These should be processed after attachments are uploaded
+				if (this.hasUnresolvedImageReferences(content, file.path)) {
+					continue;
+				}
+
 				const docId = pathToDocId(file.path);
 
 				// Get baseContent from IndexedDB for 3-way merge
@@ -294,5 +302,36 @@ export class DocumentSync {
 
 	updateSettings(settings: SyncSettings): void {
 		this.settings = settings;
+	}
+
+	/**
+	 * Check if document content contains wikilink image references (![[image.png]])
+	 * that point to local files which haven't been uploaded yet.
+	 * These documents should be skipped until attachments are uploaded.
+	 */
+	private hasUnresolvedImageReferences(content: string, docPath: string): boolean {
+		// Reset regex state (it has global flag)
+		WIKILINK_IMAGE_REGEX.lastIndex = 0;
+
+		const matches = content.matchAll(WIKILINK_IMAGE_REGEX);
+		for (const match of matches) {
+			const imagePath = match[1];
+
+			// Check if this image file exists locally
+			// Try both the exact path and just the filename
+			const localFile =
+				this.vault.getAbstractFileByPath(imagePath) ||
+				this.vault.getFiles().find((f) => f.name === imagePath);
+
+			if (localFile instanceof TFile) {
+				// Local file still exists, meaning it hasn't been uploaded yet
+				console.log(
+					`[DocumentSync] Skipping ${docPath}: has unresolved reference to local image ${imagePath}`,
+				);
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

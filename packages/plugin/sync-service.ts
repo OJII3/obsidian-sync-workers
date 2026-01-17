@@ -167,22 +167,10 @@ export class SyncService {
 				await this.documentSync.pullChanges(this.syncStats);
 			}
 
-			// Step 2: Push local document changes (only if we have local doc changes)
-			if (hasLocalDocChanges) {
-				this.documentSync.setProgressCallback((current, total) => {
-					this.onStatusChange({
-						status: "syncing",
-						progress: { phase: "push", current, total },
-						stats: this.syncStats,
-					});
-				});
-				await this.documentSync.pushChanges(this.syncStats);
-			}
-
-			// Step 3: Sync attachments if enabled
-			// Note: Attachments use R2 as CDN - uploaded files are converted to URL references
-			// in markdown, so we don't need to download attachments to other clients.
-			// We only update lastAttachmentSeq to track server state.
+			// Step 2: Push attachments FIRST (before documents)
+			// This ensures that when documents are pushed, all wikilink references
+			// have already been converted to R2 URLs, preventing broken references
+			// on other clients.
 			if (this.settings.syncAttachments) {
 				if (hasServerAttachmentChanges) {
 					// Just update seq tracking (no actual file downloads needed)
@@ -199,6 +187,20 @@ export class SyncService {
 					});
 					await this.attachmentSync.pushAttachmentChanges(this.syncStats);
 				}
+			}
+
+			// Step 3: Push local document changes (after attachments are uploaded)
+			// At this point, any wikilink image references should have been
+			// converted to R2 URLs by the attachment sync.
+			if (hasLocalDocChanges) {
+				this.documentSync.setProgressCallback((current, total) => {
+					this.onStatusChange({
+						status: "syncing",
+						progress: { phase: "push", current, total },
+						stats: this.syncStats,
+					});
+				});
+				await this.documentSync.pushChanges(this.syncStats);
 			}
 
 			this.settings.lastSync = Date.now();
