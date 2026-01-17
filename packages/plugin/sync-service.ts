@@ -133,17 +133,9 @@ export class SyncService {
 			// Check if there are any server changes
 			// When status API fails (status is null), default to true to ensure sync proceeds
 			const hasServerDocChanges = status ? status.last_seq > this.settings.lastSeq : true;
-			const hasServerAttachmentChanges =
-				this.settings.syncAttachments &&
-				(status ? status.last_attachment_seq > this.settings.lastAttachmentSeq : true);
 
 			// Skip sync if no changes on either side
-			if (
-				!hasLocalDocChanges &&
-				!hasLocalAttachmentChanges &&
-				!hasServerDocChanges &&
-				!hasServerAttachmentChanges
-			) {
+			if (!hasLocalDocChanges && !hasLocalAttachmentChanges && !hasServerDocChanges) {
 				this.settings.lastSync = Date.now();
 				this.onStatusChange({
 					status: "success",
@@ -181,29 +173,16 @@ export class SyncService {
 				await this.documentSync.pushChanges(this.syncStats);
 			}
 
-			// Step 3: Sync attachments if enabled
-			if (this.settings.syncAttachments) {
-				if (hasServerAttachmentChanges) {
-					this.attachmentSync.setProgressCallback((current, total) => {
-						this.onStatusChange({
-							status: "syncing",
-							progress: { phase: "pull-attachments", current, total },
-							stats: this.syncStats,
-						});
+			// Step 3: Push attachments if enabled and there are local changes
+			if (this.settings.syncAttachments && hasLocalAttachmentChanges) {
+				this.attachmentSync.setProgressCallback((current, total) => {
+					this.onStatusChange({
+						status: "syncing",
+						progress: { phase: "push-attachments", current, total },
+						stats: this.syncStats,
 					});
-					await this.attachmentSync.pullAttachmentChanges(this.syncStats);
-				}
-
-				if (hasLocalAttachmentChanges) {
-					this.attachmentSync.setProgressCallback((current, total) => {
-						this.onStatusChange({
-							status: "syncing",
-							progress: { phase: "push-attachments", current, total },
-							stats: this.syncStats,
-						});
-					});
-					await this.attachmentSync.pushAttachmentChanges(this.syncStats);
-				}
+				});
+				await this.attachmentSync.pushAttachmentChanges(this.syncStats);
 			}
 
 			this.settings.lastSync = Date.now();

@@ -2,12 +2,7 @@ import { TFile, type Vault } from "obsidian";
 import { generateAttachmentUrlFromId, WIKILINK_IMAGE_REGEX } from "./attachment-url";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
-import type {
-	AttachmentChangesResponse,
-	AttachmentUploadResponse,
-	SyncSettings,
-	SyncStats,
-} from "./types";
+import type { AttachmentUploadResponse, SyncSettings, SyncStats } from "./types";
 import { getContentType, isAttachmentFile } from "./types";
 
 export class AttachmentSync {
@@ -36,55 +31,6 @@ export class AttachmentSync {
 
 	setProgressCallback(callback: (current: number, total: number) => void): void {
 		this.onProgress = callback;
-	}
-
-	async pullAttachmentChanges(syncStats: SyncStats): Promise<void> {
-		const BATCH_SIZE = 100;
-		let since = this.settings.lastAttachmentSeq;
-		let hasMore = true;
-		let totalProcessed = 0;
-
-		while (hasMore) {
-			const url = `${this.settings.serverUrl}/api/attachments/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
-
-			const response = await retryFetch(url, undefined, this.retryOptions);
-			if (!response.ok) {
-				throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
-			}
-
-			const data: AttachmentChangesResponse = await response.json();
-
-			// Process changes in this batch
-			for (let i = 0; i < data.results.length; i++) {
-				const change = data.results[i];
-				totalProcessed++;
-				this.onProgress?.(totalProcessed, totalProcessed);
-
-				try {
-					if (change.deleted) {
-						await this.deleteLocalAttachment(change.path);
-					} else {
-						await this.pullAttachment(change.id, change.path, change.hash);
-					}
-					syncStats.attachmentsPulled++;
-				} catch (error) {
-					console.error(`Error processing attachment change for ${change.path}:`, error);
-					syncStats.errors++;
-				}
-			}
-
-			// Update last sequence for this batch
-			if (data.last_seq > since) {
-				since = data.last_seq;
-				this.settings.lastAttachmentSeq = data.last_seq;
-			}
-
-			// Check if there are more changes to fetch
-			hasMore = data.results.length === BATCH_SIZE;
-		}
-
-		// Persist the updated lastAttachmentSeq to prevent re-fetching on reload
-		await this.metadataManager.persistCache();
 	}
 
 	async pushAttachmentChanges(syncStats: SyncStats): Promise<void> {
@@ -220,85 +166,6 @@ export class AttachmentSync {
 			} catch (error) {
 				console.error(`Failed to delete local attachment ${attachment.file.path}:`, error);
 			}
-		}
-	}
-
-	private async pullAttachment(id: string, path: string, serverHash: string): Promise<void> {
-		// Validate path to prevent file creation errors
-		if (!path || path.trim() === "") {
-			throw new Error(`Cannot download attachment: empty path for id ${id}`);
-		}
-
-		const attachmentCache = this.metadataManager.getAttachmentCache();
-
-		// Check if local file exists with same hash
-		const localMeta = attachmentCache.get(path);
-		if (localMeta && localMeta.hash === serverHash) {
-			return;
-		}
-
-		// Download attachment content
-		const url = `${this.settings.serverUrl}/api/attachments/${encodeURIComponent(id)}/content?vault_id=${this.settings.vaultId}`;
-
-		const response = await retryFetch(url, undefined, this.retryOptions);
-		if (!response.ok) {
-			if (response.status === 404) {
-				return;
-			}
-			throw new Error(`Failed to fetch attachment: ${response.statusText}`);
-		}
-
-		const data = await response.arrayBuffer();
-		const contentType = response.headers.get("Content-Type") || "application/octet-stream";
-		const hash = response.headers.get("X-Attachment-Hash") || serverHash;
-
-		// Ensure parent folders exist
-		const lastSlashIndex = path.lastIndexOf("/");
-		if (lastSlashIndex !== -1) {
-			const folderPath = path.substring(0, lastSlashIndex);
-			if (folderPath) {
-				const existingFolder = this.vault.getAbstractFileByPath(folderPath);
-				if (!existingFolder) {
-					const segments = folderPath.split("/");
-					let currentPath = "";
-					for (const segment of segments) {
-						if (!segment) continue;
-						currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-						if (!this.vault.getAbstractFileByPath(currentPath)) {
-							await this.vault.createFolder(currentPath);
-						}
-					}
-				}
-			}
-		}
-
-		// Write file
-		const file = this.vault.getAbstractFileByPath(path);
-		if (file instanceof TFile) {
-			await this.vault.modifyBinary(file, data);
-		} else {
-			await this.vault.createBinary(path, data);
-		}
-
-		// Update cache
-		attachmentCache.set(path, {
-			path,
-			hash,
-			size: data.byteLength,
-			contentType,
-			lastModified: Date.now(),
-		});
-		await this.metadataManager.persistCache();
-	}
-
-	private async deleteLocalAttachment(path: string): Promise<void> {
-		const file = this.vault.getAbstractFileByPath(path);
-		const attachmentCache = this.metadataManager.getAttachmentCache();
-
-		if (file instanceof TFile) {
-			await this.vault.delete(file);
-			attachmentCache.delete(path);
-			await this.metadataManager.persistCache();
 		}
 	}
 
