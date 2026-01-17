@@ -182,15 +182,12 @@ export class SyncService {
 			}
 
 			// Step 3: Sync attachments if enabled
+			// Note: Attachments use R2 as CDN - uploaded files are converted to URL references
+			// in markdown, so we don't need to download attachments to other clients.
+			// We only update lastAttachmentSeq to track server state.
 			if (this.settings.syncAttachments) {
 				if (hasServerAttachmentChanges) {
-					this.attachmentSync.setProgressCallback((current, total) => {
-						this.onStatusChange({
-							status: "syncing",
-							progress: { phase: "pull-attachments", current, total },
-							stats: this.syncStats,
-						});
-					});
+					// Just update seq tracking (no actual file downloads needed)
 					await this.attachmentSync.pullAttachmentChanges(this.syncStats);
 				}
 
