@@ -12,12 +12,20 @@ export class ConflictResolutionModal extends Modal {
 	private filePath: string;
 	private localContent: string;
 	private remoteContent: string;
+	private remoteDeleted: boolean;
 
-	constructor(app: App, filePath: string, localContent: string, remoteContent: string) {
+	constructor(
+		app: App,
+		filePath: string,
+		localContent: string,
+		remoteContent: string,
+		remoteDeleted: boolean = false,
+	) {
 		super(app);
 		this.filePath = filePath;
 		this.localContent = localContent;
 		this.remoteContent = remoteContent;
+		this.remoteDeleted = remoteDeleted;
 	}
 
 	onOpen() {
@@ -48,10 +56,12 @@ export class ConflictResolutionModal extends Modal {
 
 		// Remote version preview
 		const remotePreview = previewContainer.createDiv("conflict-preview");
-		remotePreview.createEl("h3", { text: "Remote version (server)" });
+		remotePreview.createEl("h3", {
+			text: this.remoteDeleted ? "Remote version (deleted)" : "Remote version (server)",
+		});
 		const remoteCode = remotePreview.createEl("pre");
 		remoteCode.createEl("code", {
-			text: this.truncateContent(this.remoteContent),
+			text: this.remoteDeleted ? "(deleted on server)" : this.truncateContent(this.remoteContent),
 		});
 
 		// Buttons

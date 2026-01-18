@@ -65,6 +65,7 @@ export interface BulkDocsResponse {
 	merged?: boolean; // true if server performed 3-way merge
 	current_content?: string; // current server content for conflict resolution
 	current_rev?: string; // current server revision for conflict resolution
+	current_deleted?: boolean; // current server deleted flag for conflict resolution
 }
 
 export interface ConflictRegion {
