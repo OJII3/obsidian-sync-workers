@@ -12,11 +12,14 @@ Obsidianプラグイン側の開発メモ。
 ## 開発コマンド
 
 ```bash
-# 開発モード
+# 開発モード（watch）
 bun run dev
 
-# ビルド
+# ビルド（型チェックなし、高速）
 bun run build
+
+# 型チェック
+bun run typecheck
 ```
 
 ## 設定項目
@@ -47,8 +50,12 @@ bun run build
 
 ## 主要ファイル
 
-- `main.ts` - プラグインエントリーポイント
-- `sync-service.ts` - 同期ロジック
-- `settings.ts` - 設定UI
-- `conflict-modal.ts` - 競合解決UI
-- `types.ts` - 型定義
+ソースコードは `src/` 以下に配置：
+
+- `src/main.ts` - プラグインエントリーポイント
+- `src/sync-service.ts` - 同期ロジック
+- `src/document-sync.ts` - ドキュメント同期
+- `src/attachment-sync.ts` - アタッチメント同期
+- `src/settings.ts` - 設定UI
+- `src/conflict-modal.ts` - 競合解決UI
+- `src/types.ts` - 型定義

@@ -32,11 +32,14 @@ packages/
 │   │       └── merge.ts     # 3-way mergeアルゴリズム
 │   └── .dev.vars.example    # 環境変数テンプレート
 └── plugin/          # Obsidianプラグイン
-    ├── main.ts              # エントリーポイント
-    ├── sync-service.ts      # 同期ロジック
-    ├── settings.ts          # 設定UI
-    ├── conflict-modal.ts    # 競合解決UI
-    └── types.ts             # TypeScript型定義
+    └── src/
+        ├── main.ts              # エントリーポイント
+        ├── sync-service.ts      # 同期ロジック
+        ├── document-sync.ts     # ドキュメント同期
+        ├── attachment-sync.ts   # アタッチメント同期
+        ├── settings.ts          # 設定UI
+        ├── conflict-modal.ts    # 競合解決UI
+        └── types.ts             # TypeScript型定義
 ```
 
 ## 開発フロー
@@ -299,8 +302,8 @@ bun run build:plugin      # プラグインビルド
 ### 技術的な実装詳細
 
 - `packages/server/src/utils/merge.ts`: 3-way mergeアルゴリズム
-- `packages/plugin/conflict-modal.ts`: 競合解決UI
-- `packages/plugin/sync-service.ts`: 競合ハンドリングロジック
+- `packages/plugin/src/conflict-modal.ts`: 競合解決UI
+- `packages/plugin/src/sync-service.ts`: 競合ハンドリングロジック
 - メタデータに`baseContent`を保存して、次回の同期でマージに使用
 
 ## アタッチメント同期機能の詳細
@@ -366,8 +369,8 @@ R2キーにはファイルパスが含まれているため、**同じコンテ�
 - `packages/server/src/db/schema.sql`: attachments, attachment_changesテーブル
 - `packages/server/src/db/queries.ts`: アタッチメント用クエリメソッド
 - `packages/server/src/index.ts`: R2連携APIエンドポイント
-- `packages/plugin/sync-service.ts`: アタッチメント同期ロジック
-- `packages/plugin/types.ts`: アタッチメント関連の型定義
+- `packages/plugin/src/sync-service.ts`: アタッチメント同期ロジック
+- `packages/plugin/src/types.ts`: アタッチメント関連の型定義
 
 ## API リファレンス（サーバー）
 

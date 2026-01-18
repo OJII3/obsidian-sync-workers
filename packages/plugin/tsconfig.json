@@ -13,5 +13,5 @@
 		"strictNullChecks": true,
 		"lib": ["DOM", "ES2021"]
 	},
-	"include": ["**/*.ts"]
+	"include": ["src/**/*.ts"]
 }
