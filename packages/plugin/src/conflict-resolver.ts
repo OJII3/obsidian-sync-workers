@@ -30,17 +30,18 @@ export class ConflictResolver {
 		this.retryOptions = retryOptions;
 	}
 
-	async handleConflict(result: BulkDocsResponse): Promise<void> {
+	async handleConflict(result: BulkDocsResponse): Promise<ConflictResolution> {
 		const path = docIdToPath(result.id);
 		const file = this.vault.getAbstractFileByPath(path);
 
 		if (!(file instanceof TFile)) {
 			console.error(`Cannot resolve conflict: file not found ${path}`);
-			return;
+			return ConflictResolution.Cancel;
 		}
 
 		const localContent = await this.vault.read(file);
 		const remoteContent = result.current_content || "";
+		const remoteDeleted = result.current_deleted === true;
 
 		// Show conflict resolution modal
 		const modal = new ConflictResolutionModal(this.app, path, localContent, remoteContent);
@@ -57,22 +58,30 @@ export class ConflictResolver {
 				console.error(`Failed to force push ${path}:`, error);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
-			// Accept remote version
+			// Accept remote version (or deletion)
 			try {
-				await updateFileContent(this.app, this.vault, file, remoteContent);
-				this.metadataManager.getMetadataCache().set(path, {
-					path,
-					rev: result.current_rev || "",
-					lastModified: file.stat.mtime,
-				});
-				await this.baseContentStore.set(path, remoteContent);
-				await this.metadataManager.persistCache();
+				if (remoteDeleted) {
+					await this.vault.delete(file);
+					this.metadataManager.getMetadataCache().delete(path);
+					await this.baseContentStore.delete(path);
+					await this.metadataManager.persistCache();
+				} else {
+					await updateFileContent(this.app, this.vault, file, remoteContent);
+					this.metadataManager.getMetadataCache().set(path, {
+						path,
+						rev: result.current_rev || "",
+						lastModified: file.stat.mtime,
+					});
+					await this.baseContentStore.set(path, remoteContent);
+					await this.metadataManager.persistCache();
+				}
 			} catch (error) {
 				console.error(`Failed to apply remote version ${path}:`, error);
 			}
 		} else {
 			// Cancel - keep local but don't sync
 		}
+		return resolution;
 	}
 
 	async forcePushDocument(docId: string, content: string, currentRev?: string): Promise<void> {

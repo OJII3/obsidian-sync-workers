@@ -1,5 +1,6 @@
 import { type App, TFile, type Vault } from "obsidian";
 import type { BaseContentStore } from "./base-content-store";
+import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
@@ -50,6 +51,7 @@ export class DocumentSync {
 		let since = this.settings.lastSeq;
 		let hasMore = true;
 		let totalProcessed = 0;
+		let lastAppliedSeq = since;
 
 		while (hasMore) {
 			const url = `${this.settings.serverUrl}/api/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
@@ -68,26 +70,37 @@ export class DocumentSync {
 				this.onProgress?.(totalProcessed, totalProcessed);
 
 				try {
+					let applied = false;
 					if (change.deleted) {
-						await this.deleteLocalFile(change.id);
+						const remoteRev = change.changes?.[0]?.rev;
+						applied = await this.deleteLocalFile(change.id, remoteRev);
 					} else {
-						await this.pullDocument(change.id);
+						applied = await this.pullDocument(change.id);
 					}
-					syncStats.pulled++;
+					if (applied) {
+						syncStats.pulled++;
+						lastAppliedSeq = change.seq;
+					} else {
+						syncStats.conflicts++;
+						hasMore = false;
+						break;
+					}
 				} catch (error) {
 					console.error(`Error processing change for ${change.id}:`, error);
 					syncStats.errors++;
+					hasMore = false;
+					break;
 				}
 			}
 
 			// Update last sequence for this batch
-			if (data.last_seq > since) {
-				since = data.last_seq;
-				this.settings.lastSeq = data.last_seq;
+			if (lastAppliedSeq > since) {
+				since = lastAppliedSeq;
+				this.settings.lastSeq = lastAppliedSeq;
 			}
 
 			// Check if there are more changes to fetch
-			hasMore = data.results.length === BATCH_SIZE;
+			hasMore = hasMore && data.results.length === BATCH_SIZE;
 		}
 	}
 
@@ -212,7 +225,7 @@ export class DocumentSync {
 		await this.metadataManager.persistCache();
 	}
 
-	private async pullDocument(docId: string): Promise<void> {
+	private async pullDocument(docId: string): Promise<boolean> {
 		const url = `${this.settings.serverUrl}/api/docs/${encodeURIComponent(
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
@@ -234,10 +247,19 @@ export class DocumentSync {
 		const metadataCache = this.metadataManager.getMetadataCache();
 
 		if (file instanceof TFile) {
-			// Check if we need to update
 			const localMeta = metadataCache.get(path);
+			if (this.isLocalModified(file, localMeta)) {
+				const resolution = await this.conflictResolver.handleConflict({
+					id: doc._id,
+					current_content: content,
+					current_rev: doc._rev,
+				});
+				return resolution !== ConflictResolution.Cancel;
+			}
+
+			// Check if we need to update
 			if (localMeta && localMeta.rev === doc._rev) {
-				return;
+				return true;
 			}
 
 			// Update file with content
@@ -277,22 +299,42 @@ export class DocumentSync {
 		await this.baseContentStore.set(path, content);
 
 		await this.metadataManager.persistCache();
+		return true;
 	}
 
-	private async deleteLocalFile(docId: string): Promise<void> {
+	private async deleteLocalFile(docId: string, remoteRev?: string): Promise<boolean> {
 		const path = docIdToPath(docId);
 		const file = this.vault.getAbstractFileByPath(path);
 		const metadataCache = this.metadataManager.getMetadataCache();
 
 		if (file instanceof TFile) {
+			const localMeta = metadataCache.get(path);
+			if (this.isLocalModified(file, localMeta)) {
+				const resolution = await this.conflictResolver.handleConflict({
+					id: docId,
+					current_content: "",
+					current_rev: remoteRev,
+					current_deleted: true,
+				});
+				return resolution !== ConflictResolution.Cancel;
+			}
 			await this.vault.delete(file);
 			metadataCache.delete(path);
 			await this.baseContentStore.delete(path);
 			await this.metadataManager.persistCache();
+			return true;
 		}
+		return true;
 	}
 
 	updateSettings(settings: SyncSettings): void {
 		this.settings = settings;
+	}
+
+	private isLocalModified(file: TFile, metadata: { lastModified: number } | undefined): boolean {
+		if (!metadata) {
+			return true;
+		}
+		return file.stat.mtime > metadata.lastModified;
 	}
 }
