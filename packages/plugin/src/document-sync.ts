@@ -233,7 +233,7 @@ export class DocumentSync {
 		const response = await retryFetch(url, undefined, this.retryOptions);
 		if (!response.ok) {
 			if (response.status === 404) {
-				return;
+				return true;
 			}
 			throw new Error(`Failed to fetch document: ${response.statusText}`);
 		}
