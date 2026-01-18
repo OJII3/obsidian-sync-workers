@@ -248,6 +248,11 @@ export class DocumentSync {
 
 		if (file instanceof TFile) {
 			const localMeta = metadataCache.get(path);
+			// Check if we need to update
+			if (localMeta && localMeta.rev === doc._rev) {
+				return true;
+			}
+
 			if (this.isLocalModified(file, localMeta)) {
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
@@ -255,11 +260,6 @@ export class DocumentSync {
 					current_rev: doc._rev,
 				});
 				return resolution !== ConflictResolution.Cancel;
-			}
-
-			// Check if we need to update
-			if (localMeta && localMeta.rev === doc._rev) {
-				return true;
 			}
 
 			// Update file with content

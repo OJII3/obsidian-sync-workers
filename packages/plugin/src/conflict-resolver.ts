@@ -44,7 +44,13 @@ export class ConflictResolver {
 		const remoteDeleted = result.current_deleted === true;
 
 		// Show conflict resolution modal
-		const modal = new ConflictResolutionModal(this.app, path, localContent, remoteContent);
+		const modal = new ConflictResolutionModal(
+			this.app,
+			path,
+			localContent,
+			remoteContent,
+			remoteDeleted,
+		);
 		modal.open();
 
 		const resolution = await modal.waitForResult();
