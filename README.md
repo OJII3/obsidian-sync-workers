@@ -36,7 +36,7 @@ D1 Database (SQLite) + R2 (Attachments)
 
 - Bun (最新版推奨)
 - Cloudflareアカウント（サーバーデプロイ用）
-- Wrangler CLI
+- Wrangler CLI（`bunx wrangler` で実行可能）
 
 ### 1. リポジトリのクローンと依存関係のインストール
 
@@ -54,7 +54,7 @@ bun install
 ```bash
 cd packages/server
 
-wrangler d1 create obsidian-sync
+bunx wrangler d1 create obsidian-sync
 # 出力されたdatabase_idをwrangler.tomlに設定
 ```
 
