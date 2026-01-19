@@ -2,7 +2,7 @@
 
 シンプルなObsidian同期システム - Cloudflare WorkersとD1を使用したサーバーと、Obsidianプラグインのモノレポ
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OJII3/obsidian-sync-workers)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OJII3/obsidian-sync-workers/tree/main/packages/server)
 
 ## 概要
 
