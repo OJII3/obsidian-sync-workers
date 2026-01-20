@@ -38,6 +38,29 @@ export class SyncSettingsTab extends PluginSettingTab {
 					}),
 			);
 
+		// API key
+		const apiKeySetting = new Setting(containerEl)
+			.setName("API key")
+			.setDesc("Required. Must match the API key configured on the server")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				return text
+					.setPlaceholder("Enter API key")
+					.setValue(this.plugin.settings.apiKey)
+					.onChange(async (value) => {
+						const trimmedValue = value.trim();
+						if (!trimmedValue) {
+							text.inputEl.addClass("is-invalid");
+							apiKeySetting.setDesc("API key is required.");
+							return;
+						}
+						text.inputEl.removeClass("is-invalid");
+						apiKeySetting.setDesc("Required. Must match the API key configured on the server");
+						this.plugin.settings.apiKey = trimmedValue;
+						await this.plugin.saveSettings();
+					});
+			});
+
 		// Vault ID
 		new Setting(containerEl)
 			.setName("Vault ID")

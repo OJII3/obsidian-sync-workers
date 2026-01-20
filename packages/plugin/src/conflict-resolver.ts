@@ -1,4 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
+import { buildAuthHeaders } from "./auth";
 import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import type { MetadataManager } from "./metadata-manager";
@@ -100,9 +101,9 @@ export class ConflictResolver {
 			url,
 			{
 				method: "PUT",
-				headers: {
+				headers: buildAuthHeaders(this.settings, {
 					"Content-Type": "application/json",
-				},
+				}),
 				body: JSON.stringify({
 					_id: docId,
 					_rev: currentRev,

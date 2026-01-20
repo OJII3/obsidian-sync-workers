@@ -165,9 +165,9 @@ cp .dev.vars.example .dev.vars
 
 ## セキュリティ
 
-### API認証（オプション）
+### API認証（必須）
 
-環境変数 `API_KEY` を設定して有効化。
+環境変数 `API_KEY` の設定が必須。
 
 ```toml
 [vars]
@@ -175,6 +175,28 @@ API_KEY = "your-secret-api-key"
 ```
 
 **注意:** APIキーは必ず `Authorization: Bearer ...` ヘッダーで送信し、クエリパラメータでの送信は禁止。
+
+#### APIキー生成フロー
+
+```bash
+# 32バイトのランダムキーを生成
+openssl rand -hex 32
+```
+
+生成したキーを以下に設定：
+
+- ローカル: `packages/server/.dev.vars`
+- 本番: `packages/server/wrangler.toml` の `[vars]` または Cloudflare の環境変数
+
+#### 認証デバッグのポイント
+
+- `500` の場合: `API_KEY` 未設定（サーバー側の環境変数を確認）
+- `401` の場合: `Authorization` ヘッダーが欠落/不一致
+
+```bash
+curl -H "Authorization: Bearer <your-api-key>" \
+  "http://localhost:8787/api/status?vault_id=default"
+```
 
 ## 制限事項
 

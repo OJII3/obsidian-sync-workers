@@ -1,7 +1,7 @@
 export interface AuthContext {
 	request: Request;
 	set: { status?: number | string };
-	env?: { API_KEY?: string };
+	env?: { API_KEY: string };
 }
 
 /**
@@ -17,11 +17,10 @@ export function requireAuth(context: AuthContext): boolean {
 		return false;
 	}
 
-	const apiKey = env.API_KEY;
-
-	// If no API key is configured, allow all requests
+	const apiKey = env.API_KEY?.trim();
 	if (!apiKey) {
-		return true;
+		set.status = 500;
+		return false;
 	}
 
 	// Check Authorization header only
@@ -41,7 +40,13 @@ export function requireAuth(context: AuthContext): boolean {
 /**
  * Helper to create an auth error response
  */
-export function authErrorResponse() {
+export function authErrorResponse(status?: number | string) {
+	if (Number(status) === 500) {
+		return {
+			error: "Server misconfiguration",
+			message: "API_KEY is required. Set API_KEY in the environment variables.",
+		};
+	}
 	return { error: "Unauthorized", message: "Valid API key required in Authorization header" };
 }
 

@@ -1,5 +1,6 @@
 import { TFile, type Vault } from "obsidian";
 import { generateAttachmentUrlFromId, WIKILINK_IMAGE_REGEX } from "./attachment-url";
+import { buildAuthHeaders } from "./auth";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import type {
@@ -54,7 +55,11 @@ export class AttachmentSync {
 		while (hasMore) {
 			const url = `${this.settings.serverUrl}/api/attachments/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
 
-			const response = await retryFetch(url, undefined, this.retryOptions);
+			const response = await retryFetch(
+				url,
+				{ headers: buildAuthHeaders(this.settings) },
+				this.retryOptions,
+			);
 			if (!response.ok) {
 				throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
 			}
@@ -246,11 +251,11 @@ export class AttachmentSync {
 			url,
 			{
 				method: "PUT",
-				headers: {
+				headers: buildAuthHeaders(this.settings, {
 					"Content-Type": contentType,
 					"X-Content-Hash": hash,
 					"X-Content-Length": data.byteLength.toString(),
-				},
+				}),
 				body: data,
 			},
 			this.retryOptions,

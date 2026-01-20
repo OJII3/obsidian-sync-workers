@@ -112,6 +112,7 @@ bun run build:plugin      # プラグインビルド
 
 ### API認証
 
+- APIキーは必須（`API_KEY` を設定すること）
 - APIキーは**必ずAuthorizationヘッダー**で送信
 - クエリパラメータでの送信は禁止（ログに残る）
 - `.dev.vars`ファイルは`.gitignore`に含まれている
@@ -200,7 +201,7 @@ bun run build:plugin      # プラグインビルド
    - 悪意あるリクエストへの対策が必要
 
 3. **認証機構**
-   - オプショナルなAPIキー認証のみ
+   - APIキー認証は必須
    - OAuth等の本格的な認証は未実装
 
 4. **3-way mergeの制限**

@@ -13,4 +13,4 @@ binding = "ATTACHMENTS"
 bucket_name = "obsidian-attachments"
 
 [vars]
-# Environment variables (set API_KEY in production)
+# Environment variables (API_KEY is required in all environments)

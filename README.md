@@ -51,6 +51,14 @@ bun install
 
 ## サーバーのセットアップ
 
+### 0. APIキーの生成と設定（必須）
+
+```bash
+openssl rand -hex 32
+```
+
+生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.toml`（本番）に設定します。
+
 ### 1. D1データベースの作成
 
 ```bash
@@ -132,11 +140,12 @@ bun run build:plugin
 
 1. Settings → Obsidian Sync Workers を開く
 2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
-3. **Vault ID** を設定（デフォルト：`default`）
-4. **Auto sync** を有効化（オプション）
-5. **Sync interval** を設定（分単位）
-6. **Test** ボタンでサーバー接続をテスト
-7. **Sync now** で手動同期を実行
+3. **API key** を設定（サーバーの `API_KEY` と同じ値）
+4. **Vault ID** を設定（デフォルト：`default`）
+5. **Auto sync** を有効化（オプション）
+6. **Sync interval** を設定（分単位）
+7. **Test** ボタンでサーバー接続をテスト
+8. **Sync now** で手動同期を実行
 
 ## 使い方
 
@@ -160,7 +169,8 @@ bun run build:plugin
 
 1. サーバーが起動しているか確認
 2. Server URLが正しいか確認
-3. CORSエラーの場合、サーバー側のCORS設定を確認
+3. APIキーが設定されているか確認（`API_KEY` とプラグインの値が一致しているか）
+4. CORSエラーの場合、サーバー側のCORS設定を確認
 
 ### 同期が動作しない
 
