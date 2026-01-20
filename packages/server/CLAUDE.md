@@ -187,6 +187,7 @@ openssl rand -hex 32
 
 - ローカル: `packages/server/.dev.vars`
 - 本番: `packages/server/wrangler.toml` の `[vars]` または Cloudflare の環境変数
+ - プラグイン側で **Generate API key** を使って生成し、同じ値を設定してもOK
 
 #### 認証デバッグのポイント
 

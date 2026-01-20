@@ -116,6 +116,7 @@ bun run build:plugin      # プラグインビルド
 - APIキーは**必ずAuthorizationヘッダー**で送信
 - クエリパラメータでの送信は禁止（ログに残る）
 - `.dev.vars`ファイルは`.gitignore`に含まれている
+- APIキーはプラグイン設定の **Generate API key** で生成してもよい
 
 ## 実装済み機能
 

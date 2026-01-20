@@ -57,7 +57,8 @@ bun install
 openssl rand -hex 32
 ```
 
-生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.toml`（本番）に設定します。
+生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.toml`（本番）に設定します。  
+または、プラグインの設定画面で **Generate API key** を押して生成し、同じ値をサーバー側に設定してもOKです。
 
 ### 1. D1データベースの作成
 
@@ -141,6 +142,7 @@ bun run build:plugin
 1. Settings → Obsidian Sync Workers を開く
 2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
 3. **API key** を設定（サーバーの `API_KEY` と同じ値）
+   - もしくは **Generate API key** で生成し、サーバー側にも同じ値を設定
 4. **Vault ID** を設定（デフォルト：`default`）
 5. **Auto sync** を有効化（オプション）
 6. **Sync interval** を設定（分単位）

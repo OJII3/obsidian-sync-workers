@@ -1,5 +1,13 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type SyncWorkersPlugin from "./main";
+
+function generateApiKeyHex(byteLength = 32): string {
+	const bytes = new Uint8Array(byteLength);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes)
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+}
 
 export class SyncSettingsTab extends PluginSettingTab {
 	plugin: SyncWorkersPlugin;
@@ -39,11 +47,13 @@ export class SyncSettingsTab extends PluginSettingTab {
 			);
 
 		// API key
+		let apiKeyInput: HTMLInputElement | null = null;
 		const apiKeySetting = new Setting(containerEl)
 			.setName("API key")
 			.setDesc("Required. Must match the API key configured on the server")
 			.addText((text) => {
 				text.inputEl.type = "password";
+				apiKeyInput = text.inputEl;
 				return text
 					.setPlaceholder("Enter API key")
 					.setValue(this.plugin.settings.apiKey)
@@ -60,6 +70,31 @@ export class SyncSettingsTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName("Generate API key")
+			.setDesc("Generate a new key and copy it to clipboard")
+			.addButton((button) =>
+				button
+					.setButtonText("Generate")
+					.setCta()
+					.onClick(async () => {
+						const key = generateApiKeyHex();
+						this.plugin.settings.apiKey = key;
+						await this.plugin.saveSettings();
+						if (apiKeyInput) {
+							apiKeyInput.value = key;
+							apiKeyInput.classList.remove("is-invalid");
+						}
+						apiKeySetting.setDesc("Required. Must match the API key configured on the server");
+						try {
+							await navigator.clipboard.writeText(key);
+							new Notice("API key generated and copied to clipboard.");
+						} catch {
+							new Notice("API key generated. Copy it from the settings.");
+						}
+					}),
+			);
 
 		// Vault ID
 		new Setting(containerEl)
