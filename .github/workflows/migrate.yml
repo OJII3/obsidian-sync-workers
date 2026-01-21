@@ -26,7 +26,7 @@ jobs:
       - name: Check for migration files
         id: check_migrations
         run: |
-          if [ -z "$(ls -A packages/server/migrations/*.sql 2>/dev/null)" ]; then
+          if [ ! -d "packages/server/migrations" ] || [ -z "$(find packages/server/migrations -maxdepth 1 -name '*.sql' -print -quit 2>/dev/null)" ]; then
             echo "has_migrations=false" >> $GITHUB_OUTPUT
             echo "No migration files found in packages/server/migrations/"
           else
