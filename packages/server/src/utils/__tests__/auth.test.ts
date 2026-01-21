@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
 	type AuthContext,
 	authErrorResponse,
-	hashApiKey,
 	isPublicPath,
 	requireAuth,
 	timingSafeEqual,
@@ -152,36 +151,6 @@ describe("auth", () => {
 			const long3 = `${"a".repeat(999)}b`;
 			expect(timingSafeEqual(long1, long2)).toBe(true);
 			expect(timingSafeEqual(long1, long3)).toBe(false);
-		});
-	});
-
-	describe("hashApiKey", () => {
-		test("should produce consistent hash for same input", async () => {
-			const input = "test-api-key";
-			const hash1 = await hashApiKey(input);
-			const hash2 = await hashApiKey(input);
-			expect(hash1).toBe(hash2);
-		});
-
-		test("should produce different hash for different input", async () => {
-			const hash1 = await hashApiKey("key1");
-			const hash2 = await hashApiKey("key2");
-			expect(hash1).not.toBe(hash2);
-		});
-
-		test("should produce 64-character hex string for SHA-256", async () => {
-			const hash = await hashApiKey("any-input");
-			expect(hash).toMatch(/^[a-f0-9]{64}$/);
-		});
-
-		test("should handle empty string", async () => {
-			const hash = await hashApiKey("");
-			expect(hash).toMatch(/^[a-f0-9]{64}$/);
-		});
-
-		test("should handle unicode characters", async () => {
-			const hash = await hashApiKey("こんにちは🔐");
-			expect(hash).toMatch(/^[a-f0-9]{64}$/);
 		});
 	});
 });

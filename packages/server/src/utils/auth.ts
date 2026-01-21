@@ -15,8 +15,11 @@ export interface AuthContext {
  * Checks for API key in Authorization header only
  * Query parameter API keys are NOT allowed for security reasons
  *
- * Security: Both the received token and the expected key are hashed before comparison
- * to avoid plain-text comparison of secrets in memory.
+ * Security notes:
+ * - Uses constant-time comparison to prevent timing attacks
+ * - API key is stored in plain text in env var (encrypted at rest by Cloudflare)
+ * - Plugin side also stores API key in plain text (unavoidable)
+ * - Communication is protected by HTTPS
  */
 export async function requireAuth(context: AuthContext): Promise<boolean> {
 	const { request, set, env } = context;
@@ -31,11 +34,8 @@ export async function requireAuth(context: AuthContext): Promise<boolean> {
 	const authHeader = request.headers.get("Authorization");
 	if (authHeader) {
 		const token = authHeader.replace("Bearer ", "");
-		// Hash both values before comparison to avoid plain-text comparison in memory
-		const tokenHash = await hashApiKey(token);
-		const expectedHash = await hashApiKey(expectedKey);
 		// Use constant-time comparison to prevent timing attacks
-		if (timingSafeEqual(tokenHash, expectedHash)) {
+		if (timingSafeEqual(token, expectedKey)) {
 			return true;
 		}
 	}
@@ -78,18 +78,6 @@ export function isPublicPath(path: string): boolean {
 		return true;
 	}
 	return false;
-}
-
-/**
- * Hash an API key using SHA-256.
- * Used to avoid plain-text comparison of secrets.
- */
-export async function hashApiKey(key: string): Promise<string> {
-	const data = new TextEncoder().encode(key);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	return Array.from(new Uint8Array(digest))
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 /**
