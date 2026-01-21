@@ -31,7 +31,8 @@ export async function requireAuth(context: AuthContext): Promise<boolean> {
 	if (authHeader) {
 		const token = authHeader.replace("Bearer ", "");
 		const tokenHash = await hashApiKey(token);
-		if (tokenHash === storedHash) {
+		// Use constant-time comparison to prevent timing attacks
+		if (timingSafeEqual(tokenHash, storedHash)) {
 			return true;
 		}
 	}
@@ -73,7 +74,13 @@ export function isPublicPath(path: string): boolean {
 	if (/^\/api\/attachments\/[^/]+\/content$/.test(path)) {
 		return true;
 	}
-	// API key initialization endpoint (protected by Cloudflare Access)
+	// API key initialization endpoint
+	// ⚠️ SECURITY: This endpoint is marked public and relies on external protection.
+	// In production, you MUST protect this endpoint using one of these methods:
+	// - Cloudflare Access (recommended)
+	// - Cloudflare Zero Trust
+	// - IP allowlist in wrangler.jsonc
+	// Without protection, anyone can call this endpoint to initialize the API key.
 	if (path === "/api/auth/new") {
 		return true;
 	}
@@ -86,4 +93,24 @@ export async function hashApiKey(token: string): Promise<string> {
 	return Array.from(new Uint8Array(digest))
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ * Uses XOR-based comparison to ensure comparison time is independent of content.
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+	const encoder = new TextEncoder();
+	const aBytes = encoder.encode(a);
+	const bBytes = encoder.encode(b);
+
+	if (aBytes.length !== bBytes.length) {
+		return false;
+	}
+
+	let result = 0;
+	for (let i = 0; i < aBytes.length; i++) {
+		result |= aBytes[i] ^ bBytes[i];
+	}
+	return result === 0;
 }

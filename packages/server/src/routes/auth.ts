@@ -25,11 +25,13 @@ export function authNewHandler(env: Env) {
 
 		try {
 			await db.insertApiKeyHash(keyHash);
-		} catch {
+		} catch (error) {
+			console.error("Failed to insert API key hash:", error);
 			set.status = 409;
 			return { error: "API key already initialized" };
 		}
 
+		console.log("API key generated successfully at:", new Date().toISOString());
 		return { apiKey };
 	};
 }

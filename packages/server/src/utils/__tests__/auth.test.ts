@@ -5,6 +5,7 @@ import {
 	hashApiKey,
 	isPublicPath,
 	requireAuth,
+	timingSafeEqual,
 } from "../auth";
 
 function createMockContext(options: {
@@ -133,6 +134,64 @@ describe("auth", () => {
 
 		test("should return true for auth new path", () => {
 			expect(isPublicPath("/api/auth/new")).toBe(true);
+		});
+	});
+
+	describe("hashApiKey", () => {
+		test("should produce consistent hash for same input", async () => {
+			const input = "test-api-key";
+			const hash1 = await hashApiKey(input);
+			const hash2 = await hashApiKey(input);
+			expect(hash1).toBe(hash2);
+		});
+
+		test("should produce different hash for different input", async () => {
+			const hash1 = await hashApiKey("key1");
+			const hash2 = await hashApiKey("key2");
+			expect(hash1).not.toBe(hash2);
+		});
+
+		test("should produce 64-character hex string for SHA-256", async () => {
+			const hash = await hashApiKey("any-input");
+			expect(hash).toMatch(/^[a-f0-9]{64}$/);
+		});
+
+		test("should handle empty string", async () => {
+			const hash = await hashApiKey("");
+			expect(hash).toMatch(/^[a-f0-9]{64}$/);
+		});
+
+		test("should handle unicode characters", async () => {
+			const hash = await hashApiKey("こんにちは🔐");
+			expect(hash).toMatch(/^[a-f0-9]{64}$/);
+		});
+	});
+
+	describe("timingSafeEqual", () => {
+		test("should return true for identical strings", () => {
+			expect(timingSafeEqual("test", "test")).toBe(true);
+		});
+
+		test("should return false for different strings", () => {
+			expect(timingSafeEqual("test", "different")).toBe(false);
+		});
+
+		test("should return false for strings with different lengths", () => {
+			expect(timingSafeEqual("short", "longer-string")).toBe(false);
+		});
+
+		test("should return true for empty strings", () => {
+			expect(timingSafeEqual("", "")).toBe(true);
+		});
+
+		test("should return false for one empty and one non-empty string", () => {
+			expect(timingSafeEqual("", "non-empty")).toBe(false);
+		});
+
+		test("should handle hash-like strings", async () => {
+			const hash = await hashApiKey("secret");
+			expect(timingSafeEqual(hash, hash)).toBe(true);
+			expect(timingSafeEqual(hash, hash.replace("a", "b"))).toBe(false);
 		});
 	});
 });

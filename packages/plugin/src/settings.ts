@@ -3,7 +3,17 @@ import type SyncWorkersPlugin from "./main";
 
 async function requestApiKey(serverUrl: string): Promise<string> {
 	const endpoint = new URL("/api/auth/new", serverUrl).toString();
-	const response = await fetch(endpoint, { method: "POST" });
+	let response: Response;
+	try {
+		response = await fetch(endpoint, { method: "POST" });
+	} catch (error) {
+		if (error instanceof TypeError) {
+			throw new Error(
+				"Network error: Could not connect to the server. Check the URL and your connection.",
+			);
+		}
+		throw new Error(`Network error: ${(error as Error).message}`);
+	}
 	if (!response.ok) {
 		if (response.status === 409) {
 			throw new Error("API key already initialized on the server.");
