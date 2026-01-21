@@ -3,6 +3,43 @@ import type { Attachment, AttachmentChange, Change, Document, Revision } from ".
 export class Database {
 	constructor(private db: D1Database) {}
 
+	// =====================================
+	// API Key Methods
+	// =====================================
+
+	/**
+	 * Get stored API key hash (single-key mode)
+	 */
+	async getApiKeyHash(): Promise<string | null> {
+		const result = await this.db
+			.prepare("SELECT key_hash FROM api_keys ORDER BY id ASC LIMIT 1")
+			.first<{ key_hash: string }>();
+
+		return result?.key_hash || null;
+	}
+
+	/**
+	 * Check if an API key already exists
+	 */
+	async hasApiKey(): Promise<boolean> {
+		const result = await this.db.prepare("SELECT COUNT(*) as count FROM api_keys").first<{
+			count: number;
+		}>();
+
+		return (result?.count || 0) > 0;
+	}
+
+	/**
+	 * Store a new API key hash
+	 */
+	async insertApiKeyHash(keyHash: string): Promise<void> {
+		const now = Date.now();
+		await this.db
+			.prepare("INSERT INTO api_keys (id, key_hash, created_at) VALUES (1, ?, ?)")
+			.bind(keyHash, now)
+			.run();
+	}
+
 	/**
 	 * Get a document by ID
 	 */

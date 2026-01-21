@@ -86,7 +86,6 @@ mainブランチへのpushで自動デプロイ。
 
 ```bash
 cp .dev.vars.example .dev.vars
-# API_KEY=your-secret-key
 ```
 
 ## API リファレンス
@@ -101,6 +100,10 @@ cp .dev.vars.example .dev.vars
 ### 変更フィード
 
 - `GET /api/changes` - 変更リストを取得
+
+### 認証
+
+- `POST /api/auth/new` - APIキーを初回発行（Cloudflare Accessで保護）
 
 ### アタッチメント
 
@@ -167,31 +170,19 @@ cp .dev.vars.example .dev.vars
 
 ### API認証（必須）
 
-環境変数 `API_KEY` の設定が必須。
-
-```toml
-[vars]
-API_KEY = "your-secret-api-key"
-```
+APIキーはD1に保存され、`/api/auth/new` で初回のみ発行される。
 
 **注意:** APIキーは必ず `Authorization: Bearer ...` ヘッダーで送信し、クエリパラメータでの送信は禁止。
 
 #### APIキー生成フロー
 
-```bash
-# 32バイトのランダムキーを生成
-openssl rand -hex 32
-```
-
-生成したキーを以下に設定：
-
-- ローカル: `packages/server/.dev.vars`
-- 本番: `packages/server/wrangler.jsonc` の `vars` または Cloudflare の環境変数
- - プラグイン側で **Generate API key** を使って生成し、同じ値を設定してもOK
+- `POST /api/auth/new` を呼ぶとAPIキーを発行して返す（初回のみ）
+- エンドポイントはCloudflare Access等で保護すること
+- 発行後はプラグインの **Generate API key** で取得して保存
 
 #### 認証デバッグのポイント
 
-- `500` の場合: `API_KEY` 未設定（サーバー側の環境変数を確認）
+- `500` の場合: APIキー未初期化（`/api/auth/new` を実行）
 - `401` の場合: `Authorization` ヘッダーが欠落/不一致
 
 ```bash
