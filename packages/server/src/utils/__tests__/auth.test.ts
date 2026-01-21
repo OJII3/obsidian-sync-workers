@@ -32,6 +32,12 @@ describe("auth", () => {
 			expect(context.set.status).toBe(500);
 		});
 
+		test("should return false when API key is whitespace only", () => {
+			const context = createMockContext({ apiKey: "   " });
+			expect(requireAuth(context)).toBe(false);
+			expect(context.set.status).toBe(500);
+		});
+
 		test("should return true with valid Bearer token", () => {
 			const context = createMockContext({
 				apiKey: "secret-key",

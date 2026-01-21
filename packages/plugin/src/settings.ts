@@ -62,6 +62,8 @@ export class SyncSettingsTab extends PluginSettingTab {
 						if (!trimmedValue) {
 							text.inputEl.addClass("is-invalid");
 							apiKeySetting.setDesc("API key is required.");
+							this.plugin.settings.apiKey = "";
+							await this.plugin.saveSettings();
 							return;
 						}
 						text.inputEl.removeClass("is-invalid");

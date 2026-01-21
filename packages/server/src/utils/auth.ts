@@ -1,7 +1,7 @@
 export interface AuthContext {
 	request: Request;
 	set: { status?: number | string };
-	env?: { API_KEY: string };
+	env?: { API_KEY?: string };
 }
 
 /**

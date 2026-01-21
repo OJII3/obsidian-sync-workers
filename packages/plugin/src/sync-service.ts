@@ -229,6 +229,11 @@ export class SyncService {
 	}
 
 	async testConnection(): Promise<boolean> {
+		if (!this.settings.apiKey.trim()) {
+			console.warn("Connection test skipped: API key is required.");
+			return false;
+		}
+
 		try {
 			const url = `${this.settings.serverUrl}/api/status?vault_id=${this.settings.vaultId}`;
 			const response = await retryFetch(
@@ -252,6 +257,11 @@ export class SyncService {
 	 * This is optimized for frequent polling - only returns seq numbers
 	 */
 	async checkStatus(): Promise<StatusResponse | null> {
+		if (!this.settings.apiKey.trim()) {
+			console.warn("Status check skipped: API key is required.");
+			return null;
+		}
+
 		try {
 			const url = `${this.settings.serverUrl}/api/status?vault_id=${this.settings.vaultId}`;
 			const response = await retryFetch(
