@@ -1,0 +1,23 @@
+{
+  "$schema": "https://developers.cloudflare.com/schemas/wrangler.schema.json",
+  "name": "obsidian-sync-workers",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  // Account ID は GitHub Actions の CLOUDFLARE_ACCOUNT_ID シークレットから設定されます
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "obsidian-sync",
+      "database_id": "03a36520-e138-408c-90d1-eac8a81ca23e"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ATTACHMENTS",
+      "bucket_name": "obsidian-attachments"
+    }
+  ],
+  "vars": {
+    // Environment variables (API_KEY is required in all environments)
+  }
+}

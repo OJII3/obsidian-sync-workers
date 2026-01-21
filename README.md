@@ -57,7 +57,7 @@ bun install
 openssl rand -hex 32
 ```
 
-生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.toml`（本番）に設定します。  
+生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.jsonc`（本番）に設定します。  
 または、プラグインの設定画面で **Generate API key** を押して生成し、同じ値をサーバー側に設定してもOKです。
 
 ### 1. D1データベースの作成
@@ -66,7 +66,7 @@ openssl rand -hex 32
 cd packages/server
 
 bunx wrangler d1 create obsidian-sync
-# 出力されたdatabase_idをwrangler.tomlに設定
+# 出力されたdatabase_idをwrangler.jsoncに設定
 ```
 
 ### 2. データベーススキーマの適用
