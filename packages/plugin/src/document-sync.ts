@@ -1,4 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
+import { buildAuthHeaders } from "./auth";
 import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
@@ -56,7 +57,11 @@ export class DocumentSync {
 		while (hasMore) {
 			const url = `${this.settings.serverUrl}/api/changes?since=${since}&limit=${BATCH_SIZE}&vault_id=${this.settings.vaultId}`;
 
-			const response = await retryFetch(url, undefined, this.retryOptions);
+			const response = await retryFetch(
+				url,
+				{ headers: buildAuthHeaders(this.settings) },
+				this.retryOptions,
+			);
 			if (!response.ok) {
 				throw new Error(`Failed to fetch changes: ${response.statusText}`);
 			}
@@ -160,9 +165,9 @@ export class DocumentSync {
 			url,
 			{
 				method: "POST",
-				headers: {
+				headers: buildAuthHeaders(this.settings, {
 					"Content-Type": "application/json",
-				},
+				}),
 				body: JSON.stringify({
 					docs: docsToUpdate,
 				}),
@@ -230,7 +235,11 @@ export class DocumentSync {
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
 
-		const response = await retryFetch(url, undefined, this.retryOptions);
+		const response = await retryFetch(
+			url,
+			{ headers: buildAuthHeaders(this.settings) },
+			this.retryOptions,
+		);
 		if (!response.ok) {
 			if (response.status === 404) {
 				return true;

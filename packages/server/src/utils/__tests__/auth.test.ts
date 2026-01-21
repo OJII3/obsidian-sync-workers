@@ -13,21 +13,29 @@ function createMockContext(options: {
 
 	const request = new Request("http://localhost/test", { headers });
 	const set: { status: number | string } = { status: 200 };
-	const env = options.hasEnv === false ? undefined : { API_KEY: options.apiKey };
+	const env = options.hasEnv === false ? undefined : { API_KEY: options.apiKey ?? "" };
 
 	return { request, set, env };
 }
 
 describe("auth", () => {
 	describe("requireAuth", () => {
-		test("should return true when no API key is configured", () => {
+		test("should return false when no API key is configured", () => {
 			const context = createMockContext({ apiKey: undefined });
-			expect(requireAuth(context)).toBe(true);
+			expect(requireAuth(context)).toBe(false);
+			expect(context.set.status).toBe(500);
 		});
 
-		test("should return true when no API key is configured (empty string)", () => {
+		test("should return false when no API key is configured (empty string)", () => {
 			const context = createMockContext({ apiKey: "" });
-			expect(requireAuth(context)).toBe(true);
+			expect(requireAuth(context)).toBe(false);
+			expect(context.set.status).toBe(500);
+		});
+
+		test("should return false when API key is whitespace only", () => {
+			const context = createMockContext({ apiKey: "   " });
+			expect(requireAuth(context)).toBe(false);
+			expect(context.set.status).toBe(500);
 		});
 
 		test("should return true with valid Bearer token", () => {
@@ -80,6 +88,12 @@ describe("auth", () => {
 			const response = authErrorResponse();
 			expect(response.error).toBe("Unauthorized");
 			expect(response.message).toContain("API key");
+		});
+
+		test("should return config error when status is 500", () => {
+			const response = authErrorResponse(500);
+			expect(response.error).toBe("Server misconfiguration");
+			expect(response.message).toContain("API_KEY");
 		});
 	});
 

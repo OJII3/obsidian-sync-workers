@@ -1,5 +1,6 @@
 import type { App, Vault } from "obsidian";
 import { AttachmentSync } from "./attachment-sync";
+import { buildAuthHeaders } from "./auth";
 import { type BaseContentStore, getBaseContentStore } from "./base-content-store";
 import { ConflictResolver } from "./conflict-resolver";
 import { DocumentSync } from "./document-sync";
@@ -228,13 +229,23 @@ export class SyncService {
 	}
 
 	async testConnection(): Promise<boolean> {
+		if (!this.settings.apiKey.trim()) {
+			console.warn("Connection test skipped: API key is required.");
+			return false;
+		}
+
 		try {
-			const response = await retryFetch(this.settings.serverUrl, undefined, this.retryOptions);
+			const url = `${this.settings.serverUrl}/api/status?vault_id=${this.settings.vaultId}`;
+			const response = await retryFetch(
+				url,
+				{ headers: buildAuthHeaders(this.settings) },
+				this.retryOptions,
+			);
 			if (!response.ok) {
 				return false;
 			}
 			const data = await response.json();
-			return data.status === "ok";
+			return data.ok === true;
 		} catch (error) {
 			console.error("Connection test failed:", error);
 			return false;
@@ -246,9 +257,18 @@ export class SyncService {
 	 * This is optimized for frequent polling - only returns seq numbers
 	 */
 	async checkStatus(): Promise<StatusResponse | null> {
+		if (!this.settings.apiKey.trim()) {
+			console.warn("Status check skipped: API key is required.");
+			return null;
+		}
+
 		try {
 			const url = `${this.settings.serverUrl}/api/status?vault_id=${this.settings.vaultId}`;
-			const response = await retryFetch(url, undefined, this.retryOptions);
+			const response = await retryFetch(
+				url,
+				{ headers: buildAuthHeaders(this.settings) },
+				this.retryOptions,
+			);
 			if (!response.ok) {
 				return null;
 			}

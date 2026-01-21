@@ -1,5 +1,6 @@
 export interface SyncSettings {
 	serverUrl: string;
+	apiKey: string;
 	vaultId: string;
 	syncInterval: number; // in seconds
 	autoSync: boolean;
@@ -15,6 +16,7 @@ export interface SyncSettings {
 
 export const DEFAULT_SETTINGS: SyncSettings = {
 	serverUrl: "http://localhost:8787",
+	apiKey: "",
 	vaultId: "default",
 	syncInterval: 30, // 30 seconds default
 	autoSync: true,
