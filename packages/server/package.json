@@ -8,6 +8,9 @@
 		"deploy": "wrangler deploy",
 		"db:init": "wrangler d1 execute obsidian-sync --file=./src/db/schema.sql",
 		"db:local": "wrangler d1 execute obsidian-sync --local --file=./src/db/schema.sql",
+		"db:migrate": "wrangler d1 migrations apply obsidian-sync --remote",
+		"db:migrate:local": "wrangler d1 migrations apply obsidian-sync --local",
+		"db:migrate:list": "wrangler d1 migrations list obsidian-sync --remote",
 		"test": "bun test",
 		"test:watch": "bun test --watch"
 	},

@@ -49,7 +49,7 @@ wrangler d1 create obsidian-sync
 # 出力されたdatabase_idをwrangler.jsoncに設定
 ```
 
-### スキーマ適用
+### スキーマ適用（初回セットアップ）
 
 ```bash
 # 本番環境
@@ -58,6 +58,25 @@ bun run db:init
 # ローカル開発環境
 bun run db:local
 ```
+
+### マイグレーション
+
+スキーマ変更がある場合は、`migrations/` ディレクトリにSQLファイルを追加し、以下のコマンドで適用します。
+
+```bash
+# マイグレーション一覧を確認
+bun run db:migrate:list
+
+# 本番環境にマイグレーション適用
+bun run db:migrate
+
+# ローカル環境にマイグレーション適用
+bun run db:migrate:local
+```
+
+#### マイグレーションファイルの命名規則
+
+`XXXX_description.sql` の形式で作成します（例: `0001_add_api_keys_table.sql`）。
 
 ### ローカル開発サーバー
 
@@ -209,10 +228,14 @@ obsidian-sync-workers/
 │   ├── db/
 │   │   ├── schema.sql     # D1スキーマ
 │   │   └── queries.ts     # データベースクエリ
+│   ├── routes/
+│   │   └── auth.ts        # 認証エンドポイント
 │   └── utils/
 │       ├── revision.ts    # リビジョン管理
 │       ├── auth.ts        # 認証ヘルパー
 │       └── merge.ts       # 3-way merge
+├── migrations/            # D1マイグレーション
+│   └── 0001_*.sql         # マイグレーションファイル
 ├── wrangler.jsonc         # Cloudflare設定
 ├── package.json
 └── tsconfig.json
