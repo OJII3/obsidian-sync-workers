@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developers.cloudflare.com/schemas/wrangler.schema.json",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "obsidian-sync-workers",
   "main": "src/index.ts",
   "compatibility_date": "2025-06-01",
