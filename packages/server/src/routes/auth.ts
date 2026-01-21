@@ -11,7 +11,8 @@ function generateApiKeyHex(byteLength = 32): string {
 }
 
 export function authNewHandler(env: Env) {
-	return async ({ set }: { set: { status?: number } }) => {
+	return async (context: any) => {
+		const { set } = context;
 		const db = new Database(env.DB);
 		const alreadyInitialized = await db.hasApiKey();
 		if (alreadyInitialized) {
