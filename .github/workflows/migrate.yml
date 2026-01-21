@@ -23,16 +23,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Check for migration files
+        id: check_migrations
+        run: |
+          if [ ! -d "packages/server/migrations" ] || [ -z "$(find packages/server/migrations -maxdepth 1 -name '*.sql' -print -quit 2>/dev/null)" ]; then
+            echo "has_migrations=false" >> $GITHUB_OUTPUT
+            echo "No migration files found in packages/server/migrations/"
+          else
+            echo "has_migrations=true" >> $GITHUB_OUTPUT
+            echo "Migration files found:"
+            ls -la packages/server/migrations/*.sql
+          fi
+
       - name: Setup Bun
+        if: steps.check_migrations.outputs.has_migrations == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Install dependencies
+        if: steps.check_migrations.outputs.has_migrations == 'true'
         run: bun install --frozen-lockfile
 
       - name: List migrations
-        if: ${{ inputs.action == 'list' }}
+        if: ${{ inputs.action == 'list' && steps.check_migrations.outputs.has_migrations == 'true' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -41,10 +55,14 @@ jobs:
           command: d1 migrations list obsidian-sync --remote
 
       - name: Apply migrations
-        if: ${{ inputs.action == 'apply' }}
+        if: ${{ inputs.action == 'apply' && steps.check_migrations.outputs.has_migrations == 'true' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/server
           command: d1 migrations apply obsidian-sync --remote
+
+      - name: Skip message
+        if: steps.check_migrations.outputs.has_migrations == 'false'
+        run: echo "Skipped - no migration files to process"
