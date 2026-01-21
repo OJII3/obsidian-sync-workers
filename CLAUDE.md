@@ -112,11 +112,12 @@ bun run build:plugin      # プラグインビルド
 
 ### API認証
 
-- APIキーは必須（`/api/auth/new` で初回発行）
+- APIキーは環境変数 `API_KEY` で設定（必須）
+- 生成方法: `openssl rand -hex 32`
 - APIキーは**必ずAuthorizationヘッダー**で送信
 - クエリパラメータでの送信は禁止（ログに残る）
 - `.dev.vars`ファイルは`.gitignore`に含まれている
-- APIキーはプラグイン設定の **Generate API key** で取得する
+- サーバーとプラグインで同じAPIキーを設定する
 
 ## 実装済み機能
 
@@ -462,19 +463,19 @@ Obsidianのプラグインガイドラインに合わせ、以下を遵守しま
 # サーバー起動
 bun run dev
 
-# ドキュメント作成
+# ドキュメント作成 (API_KEYは.dev.varsで設定した値を使用)
 curl -X PUT http://localhost:8787/api/docs/test1 \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-api-key>" \
   -d '{"_id": "test1", "content": "Test content"}'
 
 # ドキュメント取得
-curl http://localhost:8787/api/docs/test1
+curl -H "Authorization: Bearer <your-api-key>" \
+  http://localhost:8787/api/docs/test1
 
 # 変更フィード確認
-curl http://localhost:8787/api/changes
-
-# すべてのドキュメント確認
-curl http://localhost:8787/api/debug/docs
+curl -H "Authorization: Bearer <your-api-key>" \
+  http://localhost:8787/api/changes
 ```
 
 ## トラブルシューティング
@@ -499,6 +500,7 @@ curl http://localhost:8787/api/debug/docs
 
 ## 最終更新
 
+2026-01-22: API認証を環境変数ベースに変更（D1のapi_keysテーブルを廃止）
 2026-01-12: R2によるアタッチメント（画像・バイナリファイル）同期機能を実装
 2026-01-12: 3-way merge機能と競合解決UIを実装
 2026-01-11: 初版作成（モノレポ構築、PRレビュー対応、GitHub Actions追加、Bun移行完了）

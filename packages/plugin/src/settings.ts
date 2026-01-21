@@ -1,32 +1,6 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type SyncWorkersPlugin from "./main";
 
-async function requestApiKey(serverUrl: string): Promise<string> {
-	const endpoint = new URL("/api/auth/new", serverUrl).toString();
-	let response: Response;
-	try {
-		response = await fetch(endpoint, { method: "POST" });
-	} catch (error) {
-		if (error instanceof TypeError) {
-			throw new Error(
-				"Network error: Could not connect to the server. Check the URL and your connection.",
-			);
-		}
-		throw new Error(`Network error: ${(error as Error).message}`);
-	}
-	if (!response.ok) {
-		if (response.status === 409) {
-			throw new Error("API key already initialized on the server.");
-		}
-		throw new Error(`Failed to generate API key (status: ${response.status}).`);
-	}
-	const data = (await response.json()) as { apiKey?: string };
-	if (!data.apiKey) {
-		throw new Error("Invalid response from server.");
-	}
-	return data.apiKey;
-}
-
 export class SyncSettingsTab extends PluginSettingTab {
 	plugin: SyncWorkersPlugin;
 
@@ -65,13 +39,11 @@ export class SyncSettingsTab extends PluginSettingTab {
 			);
 
 		// API key
-		let apiKeyInput: HTMLInputElement | null = null;
 		const apiKeySetting = new Setting(containerEl)
 			.setName("API key")
-			.setDesc("Required. Must match the API key configured on the server")
+			.setDesc("Required. Generate with: openssl rand -hex 32")
 			.addText((text) => {
 				text.inputEl.type = "password";
-				apiKeyInput = text.inputEl;
 				return text
 					.setPlaceholder("Enter API key")
 					.setValue(this.plugin.settings.apiKey)
@@ -85,51 +57,26 @@ export class SyncSettingsTab extends PluginSettingTab {
 							return;
 						}
 						text.inputEl.removeClass("is-invalid");
-						apiKeySetting.setDesc("Required. Must match the API key configured on the server");
+						apiKeySetting.setDesc("Required. Generate with: openssl rand -hex 32");
 						this.plugin.settings.apiKey = trimmedValue;
 						await this.plugin.saveSettings();
 					});
-			});
-
-		new Setting(containerEl)
-			.setName("Generate API key")
-			.setDesc("Generate a new key from the server (requires Cloudflare Access)")
+			})
 			.addButton((button) =>
-				button
-					.setButtonText("Generate")
-					.setCta()
-					.onClick(async () => {
-						const serverUrl = this.plugin.settings.serverUrl.trim();
-						if (!serverUrl) {
-							new Notice("Server URL is required.");
-							return;
-						}
-
-						button.setButtonText("Generating...");
-						button.setDisabled(true);
-
-						try {
-							const key = await requestApiKey(serverUrl);
-							this.plugin.settings.apiKey = key;
-							await this.plugin.saveSettings();
-							if (apiKeyInput) {
-								apiKeyInput.value = key;
-								apiKeyInput.classList.remove("is-invalid");
-							}
-							apiKeySetting.setDesc("Required. Must match the API key configured on the server");
-							try {
-								await navigator.clipboard.writeText(key);
-								new Notice("API key generated and copied to clipboard.");
-							} catch {
-								new Notice("API key generated. Copy it from the settings.");
-							}
-						} catch (error) {
-							new Notice((error as Error).message);
-						} finally {
-							button.setButtonText("Generate");
-							button.setDisabled(false);
-						}
-					}),
+				button.setButtonText("Copy").onClick(async () => {
+					const apiKey = this.plugin.settings.apiKey;
+					if (!apiKey) {
+						new Notice("No API key to copy.");
+						return;
+					}
+					try {
+						await navigator.clipboard.writeText(apiKey);
+						button.setButtonText("Copied!");
+						setTimeout(() => button.setButtonText("Copy"), 1500);
+					} catch {
+						new Notice("Failed to copy to clipboard.");
+					}
+				}),
 			);
 
 		// Vault ID

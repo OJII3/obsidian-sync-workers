@@ -120,10 +120,6 @@ cp .dev.vars.example .dev.vars
 
 - `GET /api/changes` - 変更リストを取得
 
-### 認証
-
-- `POST /api/auth/new` - APIキーを初回発行（Cloudflare Accessで保護）
-
 ### アタッチメント
 
 - `GET /api/attachments/changes` - アタッチメント変更フィード
@@ -189,19 +185,24 @@ cp .dev.vars.example .dev.vars
 
 ### API認証（必須）
 
-APIキーはD1に保存され、`/api/auth/new` で初回のみ発行される。
+APIキーは環境変数 `API_KEY` で設定する（必須）。
+
+```bash
+# APIキーの生成
+openssl rand -hex 32
+```
 
 **注意:** APIキーは必ず `Authorization: Bearer ...` ヘッダーで送信し、クエリパラメータでの送信は禁止。
 
-#### APIキー生成フロー
+#### 設定方法
 
-- `POST /api/auth/new` を呼ぶとAPIキーを発行して返す（初回のみ）
-- エンドポイントはCloudflare Access等で保護すること
-- 発行後はプラグインの **Generate API key** で取得して保存
+1. `openssl rand -hex 32` でAPIキーを生成
+2. サーバー側: `.dev.vars` (ローカル) または Cloudflare Workers のシークレットに `API_KEY` を設定
+3. プラグイン側: 設定画面で同じAPIキーを入力
 
 #### 認証デバッグのポイント
 
-- `500` の場合: APIキー未初期化（`/api/auth/new` を実行）
+- `500` の場合: `API_KEY` 環境変数が未設定
 - `401` の場合: `Authorization` ヘッダーが欠落/不一致
 
 ```bash
@@ -228,8 +229,7 @@ obsidian-sync-workers/
 │   ├── db/
 │   │   ├── schema.sql     # D1スキーマ
 │   │   └── queries.ts     # データベースクエリ
-│   ├── routes/
-│   │   └── auth.ts        # 認証エンドポイント
+│   ├── routes/            # APIルートハンドラー
 │   └── utils/
 │       ├── revision.ts    # リビジョン管理
 │       ├── auth.ts        # 認証ヘルパー
@@ -245,11 +245,18 @@ obsidian-sync-workers/
 
 ```bash
 bun run dev
+
+# API_KEYは.dev.varsで設定した値を使用
 curl -X PUT http://localhost:8787/api/docs/test1 \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-api-key>" \
   -d '{"_id": "test1", "content": "Test content"}'
-curl http://localhost:8787/api/docs/test1
-curl http://localhost:8787/api/changes
+
+curl -H "Authorization: Bearer <your-api-key>" \
+  http://localhost:8787/api/docs/test1
+
+curl -H "Authorization: Bearer <your-api-key>" \
+  http://localhost:8787/api/changes
 ```
 
 ## 参考

@@ -1,5 +1,9 @@
 # Local development environment variables
 # Copy this file to .dev.vars and fill in your actual values
 
+# Required: API key for authentication
+# Generate with: openssl rand -hex 32
+API_KEY=your_api_key_here
+
 # Optional: CORS origin
 # CORS_ORIGIN=https://app.example.com
