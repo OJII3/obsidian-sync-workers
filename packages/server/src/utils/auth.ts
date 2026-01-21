@@ -1,7 +1,9 @@
+import { Database } from "../db/queries";
+
 export interface AuthContext {
 	request: Request;
 	set: { status?: number | string };
-	env?: { API_KEY?: string };
+	env?: { DB?: D1Database };
 }
 
 /**
@@ -9,16 +11,17 @@ export interface AuthContext {
  * Checks for API key in Authorization header only
  * Query parameter API keys are NOT allowed for security reasons
  */
-export function requireAuth(context: AuthContext): boolean {
+export async function requireAuth(context: AuthContext): Promise<boolean> {
 	const { request, set, env } = context;
 
-	if (!env) {
+	if (!env?.DB) {
 		set.status = 500;
 		return false;
 	}
 
-	const apiKey = env.API_KEY?.trim();
-	if (!apiKey) {
+	const db = new Database(env.DB);
+	const storedHash = await db.getApiKeyHash();
+	if (!storedHash) {
 		set.status = 500;
 		return false;
 	}
@@ -27,7 +30,8 @@ export function requireAuth(context: AuthContext): boolean {
 	const authHeader = request.headers.get("Authorization");
 	if (authHeader) {
 		const token = authHeader.replace("Bearer ", "");
-		if (token === apiKey) {
+		const tokenHash = await hashApiKey(token);
+		if (tokenHash === storedHash) {
 			return true;
 		}
 	}
@@ -44,7 +48,7 @@ export function authErrorResponse(status?: number | string) {
 	if (Number(status) === 500) {
 		return {
 			error: "Server misconfiguration",
-			message: "API_KEY is required. Set API_KEY in the environment variables.",
+			message: "API key is not initialized. Call /api/auth/new to create one.",
 		};
 	}
 	return { error: "Unauthorized", message: "Valid API key required in Authorization header" };
@@ -69,5 +73,17 @@ export function isPublicPath(path: string): boolean {
 	if (/^\/api\/attachments\/[^/]+\/content$/.test(path)) {
 		return true;
 	}
+	// API key initialization endpoint (protected by Cloudflare Access)
+	if (path === "/api/auth/new") {
+		return true;
+	}
 	return false;
+}
+
+export async function hashApiKey(token: string): Promise<string> {
+	const data = new TextEncoder().encode(token);
+	const digest = await crypto.subtle.digest("SHA-256", data);
+	return Array.from(new Uint8Array(digest))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 }

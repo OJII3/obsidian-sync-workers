@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS changes (
 CREATE INDEX IF NOT EXISTS idx_changes_vault_id ON changes(vault_id);
 CREATE INDEX IF NOT EXISTS idx_changes_seq ON changes(seq);
 
+-- API keys table: stores a single hashed API key for auth
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY,
+  key_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 -- Attachments table: stores metadata for binary files in R2
 CREATE TABLE IF NOT EXISTS attachments (
   id TEXT PRIMARY KEY,

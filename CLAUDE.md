@@ -112,11 +112,11 @@ bun run build:plugin      # プラグインビルド
 
 ### API認証
 
-- APIキーは必須（`API_KEY` を設定すること）
+- APIキーは必須（`/api/auth/new` で初回発行）
 - APIキーは**必ずAuthorizationヘッダー**で送信
 - クエリパラメータでの送信は禁止（ログに残る）
 - `.dev.vars`ファイルは`.gitignore`に含まれている
-- APIキーはプラグイン設定の **Generate API key** で生成してもよい
+- APIキーはプラグイン設定の **Generate API key** で取得する
 
 ## 実装済み機能
 

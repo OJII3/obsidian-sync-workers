@@ -141,13 +141,13 @@ bun run build:plugin
 
 1. Settings → Obsidian Sync Workers を開く
 2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
-3. **API key** を設定（サーバーの `API_KEY` と同じ値）
-   - もしくは **Generate API key** で生成し、サーバー側にも同じ値を設定
-4. **Vault ID** を設定（デフォルト：`default`）
-5. **Auto sync** を有効化（オプション）
-6. **Sync interval** を設定（分単位）
-7. **Test** ボタンでサーバー接続をテスト
-8. **Sync now** で手動同期を実行
+3. **Generate API key** を押してサーバーから取得（Cloudflare Accessで保護推奨）
+4. **API key** が自動入力されることを確認
+5. **Vault ID** を設定（デフォルト：`default`）
+6. **Auto sync** を有効化（オプション）
+7. **Sync interval** を設定（分単位）
+8. **Test** ボタンでサーバー接続をテスト
+9. **Sync now** で手動同期を実行
 
 ## 使い方
 
@@ -171,7 +171,7 @@ bun run build:plugin
 
 1. サーバーが起動しているか確認
 2. Server URLが正しいか確認
-3. APIキーが設定されているか確認（`API_KEY` とプラグインの値が一致しているか）
+3. APIキーが設定されているか確認（プラグインに保存済みか）
 4. CORSエラーの場合、サーバー側のCORS設定を確認
 
 ### 同期が動作しない
