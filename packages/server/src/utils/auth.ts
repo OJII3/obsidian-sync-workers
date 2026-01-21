@@ -1,9 +1,7 @@
-import { Database } from "../db/queries";
-
 export interface AuthContext {
 	request: Request;
 	set: { status?: number | string };
-	env?: { DB?: D1Database };
+	env?: { API_KEY?: string };
 }
 
 /**
@@ -14,14 +12,8 @@ export interface AuthContext {
 export async function requireAuth(context: AuthContext): Promise<boolean> {
 	const { request, set, env } = context;
 
-	if (!env?.DB) {
-		set.status = 500;
-		return false;
-	}
-
-	const db = new Database(env.DB);
-	const storedHash = await db.getApiKeyHash();
-	if (!storedHash) {
+	const expectedKey = env?.API_KEY;
+	if (!expectedKey) {
 		set.status = 500;
 		return false;
 	}
@@ -30,9 +22,8 @@ export async function requireAuth(context: AuthContext): Promise<boolean> {
 	const authHeader = request.headers.get("Authorization");
 	if (authHeader) {
 		const token = authHeader.replace("Bearer ", "");
-		const tokenHash = await hashApiKey(token);
 		// Use constant-time comparison to prevent timing attacks
-		if (timingSafeEqual(tokenHash, storedHash)) {
+		if (timingSafeEqual(token, expectedKey)) {
 			return true;
 		}
 	}
@@ -49,7 +40,7 @@ export function authErrorResponse(status?: number | string) {
 	if (Number(status) === 500) {
 		return {
 			error: "Server misconfiguration",
-			message: "API key is not initialized. Call /api/auth/new to create one.",
+			message: "API_KEY environment variable is not configured.",
 		};
 	}
 	return { error: "Unauthorized", message: "Valid API key required in Authorization header" };
@@ -74,25 +65,7 @@ export function isPublicPath(path: string): boolean {
 	if (/^\/api\/attachments\/[^/]+\/content$/.test(path)) {
 		return true;
 	}
-	// API key initialization endpoint
-	// ⚠️ SECURITY: This endpoint is marked public and relies on external protection.
-	// In production, you MUST protect this endpoint using one of these methods:
-	// - Cloudflare Access (recommended)
-	// - Cloudflare Zero Trust
-	// - IP allowlist in wrangler.jsonc
-	// Without protection, anyone can call this endpoint to initialize the API key.
-	if (path === "/api/auth/new") {
-		return true;
-	}
 	return false;
-}
-
-export async function hashApiKey(token: string): Promise<string> {
-	const data = new TextEncoder().encode(token);
-	const digest = await crypto.subtle.digest("SHA-256", data);
-	return Array.from(new Uint8Array(digest))
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 /**

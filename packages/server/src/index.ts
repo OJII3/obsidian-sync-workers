@@ -8,7 +8,6 @@ import {
 	deleteAttachmentHandler,
 	uploadAttachmentHandler,
 } from "./routes/attachments";
-import { authNewHandler } from "./routes/auth";
 import { changesHandler, continuousChangesHandler } from "./routes/changes";
 import { bulkDocsHandler, deleteDocHandler, getDocHandler, putDocHandler } from "./routes/docs";
 import { healthHandler } from "./routes/health";
@@ -60,9 +59,6 @@ app.get("/", healthHandler());
 
 // Lightweight status endpoint for efficient polling
 app.get("/api/status", statusHandler(env));
-
-// API key initialization (protected by Cloudflare Access)
-app.post("/api/auth/new", authNewHandler(env));
 
 app.group("/api/changes", (app) =>
 	app.get("/", changesHandler(env)).get("/continuous", continuousChangesHandler()),
