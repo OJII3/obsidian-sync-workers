@@ -76,7 +76,7 @@ bun run db:migrate:local
 
 #### マイグレーションファイルの命名規則
 
-`XXXX_description.sql` の形式で作成します（例: `0001_add_api_keys_table.sql`）。
+`XXXX_description.sql` の形式で作成します（例: `0001_add_table_name.sql`）。
 
 ### ローカル開発サーバー
 
