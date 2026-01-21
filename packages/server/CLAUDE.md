@@ -46,7 +46,7 @@ bun install
 
 ```bash
 wrangler d1 create obsidian-sync
-# 出力されたdatabase_idをwrangler.tomlに設定
+# 出力されたdatabase_idをwrangler.jsoncに設定
 ```
 
 ### スキーマ適用
@@ -186,7 +186,7 @@ openssl rand -hex 32
 生成したキーを以下に設定：
 
 - ローカル: `packages/server/.dev.vars`
-- 本番: `packages/server/wrangler.toml` の `[vars]` または Cloudflare の環境変数
+- 本番: `packages/server/wrangler.jsonc` の `vars` または Cloudflare の環境変数
  - プラグイン側で **Generate API key** を使って生成し、同じ値を設定してもOK
 
 #### 認証デバッグのポイント
@@ -222,7 +222,7 @@ obsidian-sync-workers/
 │       ├── revision.ts    # リビジョン管理
 │       ├── auth.ts        # 認証ヘルパー
 │       └── merge.ts       # 3-way merge
-├── wrangler.toml          # Cloudflare設定
+├── wrangler.jsonc         # Cloudflare設定
 ├── package.json
 └── tsconfig.json
 ```

@@ -76,7 +76,7 @@ bun run build:plugin      # プラグインビルド
 
 2. **database_idの設定**
    - 上記コマンドの出力からdatabase_idをコピー
-   - `packages/server/wrangler.toml`のコメントアウトされたD1設定を有効化
+   - `packages/server/wrangler.jsonc`のコメントアウトされたD1設定を有効化
    - `database_id`を実際の値に置き換え
 
 3. **テーブルの作成**
@@ -88,7 +88,7 @@ bun run build:plugin      # プラグインビルド
    ```bash
    wrangler r2 bucket create obsidian-attachments
    ```
-   - `packages/server/wrangler.toml`にR2バインディングが設定済み
+   - `packages/server/wrangler.jsonc`にR2バインディングが設定済み
 
 #### デプロイ方法
 
