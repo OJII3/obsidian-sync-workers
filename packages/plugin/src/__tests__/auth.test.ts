@@ -19,7 +19,7 @@ describe("buildAuthHeaders", () => {
 
 	test("should throw when API key is empty", () => {
 		expect(() => buildAuthHeaders({ ...DEFAULT_SETTINGS, apiKey: "   " })).toThrow(
-			"API key is required",
+			"API key is required. Set it in the plugin settings.",
 		);
 	});
 });
