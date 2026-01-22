@@ -20,13 +20,6 @@ export const WIKILINK_IMAGE_REGEX = new RegExp(
 );
 
 /**
- * Regex to match Markdown image embeds with R2 URLs: ![alt](https://server/api/attachments/...)
- * Captures: alt text, full URL, encoded attachment ID
- */
-export const R2_URL_IMAGE_REGEX =
-	/!\[([^\]]*)\]\((https?:\/\/[^)]+\/api\/attachments\/([^/]+)\/content[^)]*)\)/g;
-
-/**
  * Generate the R2 attachment URL from an attachment ID
  * ID format: {vaultId}:{hash}.{ext}
  */

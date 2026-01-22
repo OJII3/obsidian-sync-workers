@@ -70,13 +70,6 @@ export interface BulkDocsResponse {
 	current_deleted?: boolean; // current server deleted flag for conflict resolution
 }
 
-export interface ConflictRegion {
-	base: string[];
-	local: string[];
-	remote: string[];
-	startLine: number;
-}
-
 // Local document metadata
 export interface DocMetadata {
 	path: string;
