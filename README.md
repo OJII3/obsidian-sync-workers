@@ -57,8 +57,12 @@ bun install
 openssl rand -hex 32
 ```
 
-生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.jsonc`（本番）に設定します。  
-または、プラグインの設定画面で **Generate API key** を押して生成し、同じ値をサーバー側に設定してもOKです。
+生成したキーを以下のように設定します：
+
+- **ローカル開発**: `packages/server/.dev.vars` に `API_KEY=生成したキー` を記載
+- **本番環境**: `wrangler secret put API_KEY` コマンドで設定
+
+サーバーとプラグインで同じAPIキーを使用してください。
 
 ### 1. D1データベースの作成
 
@@ -66,8 +70,9 @@ openssl rand -hex 32
 cd packages/server
 
 bunx wrangler d1 create obsidian-sync
-# 出力されたdatabase_idをwrangler.jsoncに設定
 ```
+
+出力された `database_id` を `wrangler.jsonc` の `d1_databases[0].database_id` に設定してください。
 
 ### 2. データベーススキーマの適用
 
@@ -79,7 +84,15 @@ bun run db:init
 bun run db:local
 ```
 
-### 3. ローカル開発サーバーの起動
+### 3. R2バケットの作成（アタッチメント同期用）
+
+```bash
+bunx wrangler r2 bucket create obsidian-attachments
+```
+
+`wrangler.jsonc` に既にR2バインディングが設定済みです。
+
+### 4. ローカル開発サーバーの起動
 
 ```bash
 # packages/server ディレクトリから
@@ -91,10 +104,15 @@ bun run dev:server
 
 サーバーは `http://localhost:8787` で起動します。
 
-### 4. デプロイ
+### 5. デプロイ
 
 ```bash
-# packages/server ディレクトリから
+# 本番環境用のAPIキーを設定
+cd packages/server
+bunx wrangler secret put API_KEY
+# プロンプトでAPIキーを入力
+
+# デプロイ
 bun run deploy
 
 # またはルートディレクトリから
@@ -141,11 +159,11 @@ bun run build:plugin
 
 1. Settings → Obsidian Sync Workers を開く
 2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
-3. **Generate API key** を押してサーバーから取得（Cloudflare Accessで保護推奨）
-4. **API key** が自動入力されることを確認
-5. **Vault ID** を設定（デフォルト：`default`）
-6. **Auto sync** を有効化（オプション）
-7. **Sync interval** を設定（分単位）
+3. **API key** にサーバーと同じAPIキーを入力
+4. **Vault ID** を設定（デフォルト：`default`）
+5. **Auto sync** を有効化（オプション）
+6. **Sync interval** を設定（5秒〜60分から選択）
+7. **Sync attachments** を有効化（画像等のバイナリファイルを同期する場合）
 8. **Test** ボタンでサーバー接続をテスト
 9. **Sync now** で手動同期を実行
 

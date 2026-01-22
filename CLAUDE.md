@@ -76,8 +76,7 @@ bun run build:plugin      # プラグインビルド
 
 2. **database_idの設定**
    - 上記コマンドの出力からdatabase_idをコピー
-   - `packages/server/wrangler.jsonc`のコメントアウトされたD1設定を有効化
-   - `database_id`を実際の値に置き換え
+   - `packages/server/wrangler.jsonc` の `d1_databases[0].database_id` を実際の値に置き換え
 
 3. **テーブルの作成**
    ```bash
@@ -101,14 +100,6 @@ bun run build:plugin      # プラグインビルド
 - `CLOUDFLARE_ACCOUNT_ID`: CloudflareのアカウントID
 
 ## セキュリティ上の重要事項
-
-### デバッグエンドポイント
-
-⚠️ `/api/debug/docs` は**本番環境では無効化すること**
-
-- 認証なしで全ドキュメントにアクセス可能
-- ローカル開発のみで使用
-- 本番デプロイ前に削除または認証を追加
 
 ### API認証
 
@@ -151,28 +142,18 @@ bun run build:plugin      # プラグインビルド
 
 以下の機能は現在実装されていません：
 
-1. **~~アタッチメント/バイナリファイル対応~~** ✅ 実装済み
-   - ✅ 画像、PDF等のファイル同期（R2使用）
-   - ✅ SHA-256ハッシュによる重複防止
-
-2. **WebSocketによるリアルタイム通知**
+1. **WebSocketによるリアルタイム通知**
    - 現在はポーリングベースの同期
-   - Cloudflare Durableオブジェクトの検討が必要
+   - Cloudflare Durable Objectsの検討が必要
 
-3. **エンドツーエンド暗号化**
+2. **エンドツーエンド暗号化**
    - サーバー側でコンテンツが平文
    - クライアント側での暗号化/復号化が必要
 
-4. **CouchDBのview/query機能**
+3. **CouchDBのview/query機能**
    - 複雑な検索・フィルタリング
 
-5. **~~競合解決UI~~** ✅ 実装済み
-   - ~~現在はサーバー側で最初の更新が優先~~
-   - ✅ 3-way mergeによる自動マージ
-   - ✅ マージ失敗時のユーザー選択UI
-   - ✅ local/remote版の選択可能
-
-6. **差分同期**
+4. **差分同期**
    - 現在はファイル全体を同期
    - 大きなファイルの効率的な同期のために必要
 
@@ -232,22 +213,16 @@ bun run build:plugin      # プラグインビルド
    - 差分同期の実装
    - バッチ処理の最適化
 
-2. **~~競合解決UIの実装~~** ✅ 実装済み
-   - ✅ ファイル競合時のマージ支援
-
-3. **監視・ログ機能**
+2. **監視・ログ機能**
    - Cloudflare Analyticsとの連携
    - エラーログの集約
 
 ### 優先度: 低
 
-1. **~~アタッチメント対応~~** ✅ 実装済み
-   - ✅ Cloudflare R2との連携
+1. **WebSocketサポート**
+   - リアルタイム同期（Durable Objects使用）
 
-2. **WebSocketサポート**
-   - リアルタイム同期
-
-3. **E2E暗号化**
+2. **E2E暗号化**
    - プライバシー保護の強化
 
 ## 開発時の注意点
@@ -377,20 +352,23 @@ R2キーにはファイルパスが含まれているため、**同じコンテ�
 
 ## API リファレンス（サーバー）
 
+### ヘルスチェック・ステータス
+
+- `GET /` - ヘルスチェック（認証不要）
+- `GET /api/status` - 最新シーケンス番号を取得（軽量ポーリング用）
+
 ### ドキュメント操作
 
 - `GET /api/docs/:id` - ドキュメントを取得
 - `PUT /api/docs/:id` - ドキュメントを作成または更新
 - `DELETE /api/docs/:id` - ドキュメントを削除
 - `POST /api/docs/bulk_docs` - 一括ドキュメント操作
+- `POST /api/_bulk_docs` - 一括ドキュメント操作（代替パス）
 
 ### 変更フィード
 
 - `GET /api/changes` - 変更リストを取得
-
-### デバッグ（ローカル環境専用）
-
-- `GET /api/debug/docs` - すべてのドキュメントを取得
+- `GET /api/changes/continuous` - 連続変更フィード
 
 ### アタッチメント
 
@@ -398,7 +376,12 @@ R2キーにはファイルパスが含まれているため、**同じコンテ�
 - `GET /api/attachments/:id` - メタデータ取得
 - `GET /api/attachments/:id/content` - コンテンツダウンロード
 - `PUT /api/attachments/:path` - アップロード
-- `DELETE /api/attachments/:path` - 削除
+- `DELETE /api/attachments/:id` - 削除（IDはcontent-addressable形式: vaultId:hash.ext）
+
+### 管理者用
+
+- `GET /api/admin/stats` - データベース統計情報を取得
+- `POST /api/admin/cleanup` - 古いデータのクリーンアップ（`?max_age_days=90`）
 
 ## データベーススキーマ（主要テーブル）
 
@@ -484,7 +467,8 @@ curl -H "Authorization: Bearer <your-api-key>" \
 
 1. サーバーが起動しているか確認
 2. Server URLが正しいか確認
-3. CORSエラーの場合、サーバー側のCORS設定を確認
+3. APIキーがサーバーとプラグインで一致しているか確認
+4. CORSエラーの場合、サーバー側のCORS設定を確認
 
 ### 同期が動作しない
 
