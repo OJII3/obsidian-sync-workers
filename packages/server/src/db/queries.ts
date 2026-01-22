@@ -49,6 +49,7 @@ export class Database {
 		// Save revision
 		await this.saveRevision({
 			doc_id: doc.id,
+			vault_id: doc.vaultId,
 			rev: doc.rev,
 			content: doc.content,
 			deleted: doc.deleted,
@@ -68,6 +69,7 @@ export class Database {
 	 */
 	async saveRevision(revision: {
 		doc_id: string;
+		vault_id: string;
 		rev: string;
 		content: string | null;
 		deleted: number;
@@ -75,19 +77,32 @@ export class Database {
 		const now = Date.now();
 		await this.db
 			.prepare(
-				"INSERT INTO revisions (doc_id, rev, content, deleted, created_at) VALUES (?, ?, ?, ?, ?)",
+				"INSERT INTO revisions (doc_id, vault_id, rev, content, deleted, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 			)
-			.bind(revision.doc_id, revision.rev, revision.content, revision.deleted, now)
+			.bind(
+				revision.doc_id,
+				revision.vault_id,
+				revision.rev,
+				revision.content,
+				revision.deleted,
+				now,
+			)
 			.run();
 	}
 
 	/**
 	 * Get revisions for a document
 	 */
-	async getRevisions(docId: string, limit: number = 10): Promise<Revision[]> {
+	async getRevisions(
+		docId: string,
+		vaultId: string = "default",
+		limit: number = 10,
+	): Promise<Revision[]> {
 		const result = await this.db
-			.prepare("SELECT * FROM revisions WHERE doc_id = ? ORDER BY created_at DESC LIMIT ?")
-			.bind(docId, limit)
+			.prepare(
+				"SELECT * FROM revisions WHERE doc_id = ? AND vault_id = ? ORDER BY created_at DESC LIMIT ?",
+			)
+			.bind(docId, vaultId, limit)
 			.all<Revision>();
 
 		return result.results || [];
@@ -335,7 +350,7 @@ export class Database {
 				`DELETE FROM revisions
 				 WHERE created_at < ?
 				 AND id NOT IN (
-					 SELECT MAX(id) FROM revisions GROUP BY doc_id
+					 SELECT MAX(id) FROM revisions GROUP BY doc_id, vault_id
 				 )`,
 			)
 			.bind(cutoffTime)
