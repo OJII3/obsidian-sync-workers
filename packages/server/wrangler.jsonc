@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "obsidian-sync",
-      "database_id": "03a36520-e138-408c-90d1-eac8a81ca23e"
+      "database_id": "your-database-id-here" // Replace with your actual database_id from `wrangler d1 create obsidian-sync`
     }
   ],
   "r2_buckets": [

@@ -128,11 +128,10 @@ cp .dev.vars.example .dev.vars
 - `PUT /api/attachments/:path` - アップロード
 - `DELETE /api/attachments/:path` - 削除
 
-### デバッグ（ローカル環境専用）
+### 管理
 
-- `GET /api/debug/docs` - すべてのドキュメントを取得
-
-**⚠️ 注意:** 本番環境では無効化すること。
+- `GET /api/admin/stats` - データベース統計情報を取得
+- `POST /api/admin/cleanup` - 古いデータをクリーンアップ
 
 ## データベーススキーマ（主要テーブル）
 

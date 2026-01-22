@@ -57,8 +57,14 @@ bun install
 openssl rand -hex 32
 ```
 
-生成したキーを `packages/server/.dev.vars`（ローカル）または `packages/server/wrangler.jsonc`（本番）に設定します。  
-または、プラグインの設定画面で **Generate API key** を押して生成し、同じ値をサーバー側に設定してもOKです。
+このキーをサーバー側とプラグイン側の両方に設定します:
+
+**サーバー側:**
+- ローカル開発: `packages/server/.dev.vars` に `API_KEY=生成したキー` を記述
+- 本番環境: `wrangler secret put API_KEY` コマンドで設定
+
+**プラグイン側:**
+- Obsidian設定画面の「API key」欄に同じキーを入力
 
 ### 1. D1データベースの作成
 
@@ -141,13 +147,12 @@ bun run build:plugin
 
 1. Settings → Obsidian Sync Workers を開く
 2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
-3. **Generate API key** を押してサーバーから取得（Cloudflare Accessで保護推奨）
-4. **API key** が自動入力されることを確認
-5. **Vault ID** を設定（デフォルト：`default`）
-6. **Auto sync** を有効化（オプション）
-7. **Sync interval** を設定（分単位）
-8. **Test** ボタンでサーバー接続をテスト
-9. **Sync now** で手動同期を実行
+3. **API key** を入力（サーバー側と同じキーを設定）
+4. **Vault ID** を設定（デフォルト：`default`）
+5. **Auto sync** を有効化（オプション）
+6. **Sync interval** を設定
+7. **Test** ボタンでサーバー接続をテスト
+8. **Sync now** で手動同期を実行
 
 ## 使い方
 
