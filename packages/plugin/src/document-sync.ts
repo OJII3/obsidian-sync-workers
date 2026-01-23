@@ -204,10 +204,11 @@ export class DocumentSync {
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with actual file mtime
 					const content = await this.vault.read(file);
+					const actualMtime = getFileMtime(this.vault, path);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
-						lastModified: file.stat.mtime,
+						lastModified: actualMtime,
 					});
 					// Store baseContent in IndexedDB (the content we just pushed is now the base)
 					await this.baseContentStore.set(path, content);
