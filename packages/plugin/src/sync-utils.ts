@@ -1,4 +1,4 @@
-import { type App, MarkdownView, type TFile, type Vault } from "obsidian";
+import { type App, MarkdownView, TFile, type Vault } from "obsidian";
 
 export async function updateFileContent(
 	app: App,
