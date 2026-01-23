@@ -193,10 +193,10 @@ bun run build:plugin      # プラグインビルド
 
 ### データ設計・同期フロー（追加・優先度付き）
 
-1. **[高] マルチVaultのスキーマ整合性**
-   - `documents` が `id` 単独PKで `vault_id` を含まず、別Vaultで同じIDが衝突する
-   - `revisions` に `vault_id` がなく、`changes` は `vault_id` を持つため整合性が崩れる可能性
-   - 対策: `documents` を `(id, vault_id)` 複合PK化、`revisions`/`changes` へ `vault_id` 追加
+1. **[高][対応済み] マルチVaultのスキーマ整合性**
+   - `documents` を `(id, vault_id)` 複合PK化
+   - `revisions` に `vault_id` 追加、`(doc_id, vault_id)` で参照
+   - `changes` は `vault_id` を維持
 
 2. **[高] アタッチメントID/R2キーがパス非依存で衝突**
    - 実装は `vaultId:hash.ext` / `vaultId/hash.ext` のため、同一内容・同拡張子の別ファイルが上書きされる
@@ -236,7 +236,7 @@ bun run build:plugin      # プラグインビルド
    - 本番環境での利用を考慮
    - ユーザー単位のアクセス制御
 
-2. **マルチVaultのスキーマ整合性修正**
+2. **マルチVaultのスキーマ整合性修正（対応済み）**
    - `documents`/`revisions`/`changes` の整合を確保
    - `(id, vault_id)` 複合キーを前提に再設計
 
@@ -456,7 +456,7 @@ R2キーにはファイルパスが含まれていないため、**同じコン�
 
 | カラム | 型 | 説明 |
 |--------|------|------|
-| id | TEXT | ドキュメントID（プライマリキー） |
+| id | TEXT | ドキュメントID（vault_idと複合PK） |
 | vault_id | TEXT | Vault識別子 |
 | content | TEXT | ドキュメント内容 |
 | rev | TEXT | リビジョン番号 |
@@ -470,6 +470,7 @@ R2キーにはファイルパスが含まれていないため、**同じコン�
 |--------|------|------|
 | id | INTEGER | 自動採番ID |
 | doc_id | TEXT | ドキュメントID |
+| vault_id | TEXT | Vault識別子 |
 | rev | TEXT | リビジョン番号 |
 | content | TEXT | その時点のドキュメント内容 |
 | deleted | INTEGER | 削除フラグ |
@@ -551,6 +552,7 @@ curl -H "Authorization: Bearer <your-api-key>" \
 
 ## 最終更新
 
+2026-01-22: documents複合PK化・revisionsにvault_id追加（マルチVault整合性修正）
 2026-01-22: API認証を環境変数ベースに変更（D1のapi_keysテーブルを廃止）
 2026-01-12: R2によるアタッチメント（画像・バイナリファイル）同期機能を実装
 2026-01-12: 3-way merge機能と競合解決UIを実装

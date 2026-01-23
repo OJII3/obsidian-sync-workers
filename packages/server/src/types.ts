@@ -18,6 +18,7 @@ export interface Document {
 export interface Revision {
 	id: number;
 	doc_id: string;
+	vault_id: string;
 	rev: string;
 	content: string | null;
 	deleted: number;
