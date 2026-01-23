@@ -4,7 +4,7 @@ import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
-import { docIdToPath, updateFileContent } from "./sync-utils";
+import { docIdToPath, getFileMtime, updateFileContent } from "./sync-utils";
 import type { BulkDocsResponse, SyncSettings } from "./types";
 
 export class ConflictResolver {
@@ -74,10 +74,12 @@ export class ConflictResolver {
 					await this.metadataManager.persistCache();
 				} else {
 					await updateFileContent(this.app, this.vault, file, remoteContent);
+					// Get actual mtime after file update (critical for correct change detection)
+					const actualMtime = getFileMtime(this.vault, path);
 					this.metadataManager.getMetadataCache().set(path, {
 						path,
 						rev: result.current_rev || "",
-						lastModified: file.stat.mtime,
+						lastModified: actualMtime,
 					});
 					await this.baseContentStore.set(path, remoteContent);
 					await this.metadataManager.persistCache();
@@ -120,10 +122,12 @@ export class ConflictResolver {
 		const result = await response.json();
 		if (result.ok && result.rev) {
 			const path = docIdToPath(docId);
+			// Get actual mtime from the file (it wasn't modified, we just pushed it)
+			const actualMtime = getFileMtime(this.vault, path);
 			this.metadataManager.getMetadataCache().set(path, {
 				path,
 				rev: result.rev,
-				lastModified: Date.now(),
+				lastModified: actualMtime,
 			});
 			await this.baseContentStore.set(path, content);
 			await this.metadataManager.persistCache();

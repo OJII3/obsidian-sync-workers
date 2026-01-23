@@ -5,7 +5,7 @@ import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
-import { docIdToPath, pathToDocId, updateFileContent } from "./sync-utils";
+import { docIdToPath, getFileMtime, pathToDocId, updateFileContent } from "./sync-utils";
 import type {
 	BulkDocsResponse,
 	ChangesResponse,
@@ -192,24 +192,24 @@ export class DocumentSync {
 				const file = this.vault.getAbstractFileByPath(path);
 
 				if (result.merged) {
-					// Automatic merge was performed
-					// Pull the merged content first to avoid race conditions
+					// Automatic merge was performed on the server
+					// Pull the merged content (skip conflict check since we know we want the merged result)
 					try {
-						await this.pullDocument(result.id);
+						await this.pullDocument(result.id, true);
 						syncStats.pushed++;
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
 						syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
-					// Normal update - update metadata
+					// Normal update - update metadata with actual file mtime
 					const content = await this.vault.read(file);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
 						lastModified: file.stat.mtime,
 					});
-					// Store baseContent in IndexedDB
+					// Store baseContent in IndexedDB (the content we just pushed is now the base)
 					await this.baseContentStore.set(path, content);
 					syncStats.pushed++;
 				} else {
@@ -230,7 +230,13 @@ export class DocumentSync {
 		await this.metadataManager.persistCache();
 	}
 
-	private async pullDocument(docId: string): Promise<boolean> {
+	/**
+	 * Pull a document from the server and update the local file.
+	 * @param docId - The document ID to pull
+	 * @param skipConflictCheck - If true, skip conflict detection (used for pulling merged content)
+	 * @returns true if successful or conflict resolved, false if cancelled
+	 */
+	private async pullDocument(docId: string, skipConflictCheck = false): Promise<boolean> {
 		const url = `${this.settings.serverUrl}/api/docs/${encodeURIComponent(
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
@@ -257,12 +263,13 @@ export class DocumentSync {
 
 		if (file instanceof TFile) {
 			const localMeta = metadataCache.get(path);
-			// Check if we need to update
+			// Check if we need to update (skip if rev already matches)
 			if (localMeta && localMeta.rev === doc._rev) {
 				return true;
 			}
 
-			if (this.isLocalModified(file, localMeta)) {
+			// Check for local modifications (unless we're pulling merged content)
+			if (!skipConflictCheck && this.isLocalModified(file, localMeta)) {
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
 					current_content: content,
@@ -297,11 +304,14 @@ export class DocumentSync {
 			await this.vault.create(path, content);
 		}
 
-		// Update metadata cache (without baseContent - it's now in IndexedDB)
+		// Get the actual file mtime after writing (critical for correct change detection)
+		const actualMtime = getFileMtime(this.vault, path);
+
+		// Update metadata cache with actual mtime (without baseContent - it's now in IndexedDB)
 		metadataCache.set(path, {
 			path,
 			rev: doc._rev,
-			lastModified: Date.now(),
+			lastModified: actualMtime,
 		});
 
 		// Store baseContent in IndexedDB for future 3-way merges
