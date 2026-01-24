@@ -8,25 +8,23 @@
  *
  * Security limits:
  * - Maximum content size: 10MB per document
- * - Maximum line count: 10,000 lines per document
+ * - Maximum line count: 2,000 lines per document
+ *   (LCS has O(m*n) complexity; 2000^2 = 4M cells is acceptable)
  */
+
+import type { ConflictRegion } from "./types";
 
 // Security limits to prevent excessive memory/CPU usage in LCS
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_LINE_COUNT = 10000; // 10k lines
+// LCS algorithm uses O(m*n) memory. With 2000 lines max, worst case is 4M cells (~16MB).
+// This is acceptable for modern devices while preventing DoS attacks.
+const MAX_LINE_COUNT = 2000;
 
 export interface MergeResult {
 	success: boolean;
 	content?: string;
 	conflicts?: ConflictRegion[];
 	error?: string;
-}
-
-export interface ConflictRegion {
-	base: string[];
-	local: string[];
-	remote: string[];
-	startLine: number;
 }
 
 /**
@@ -54,7 +52,7 @@ export function threeWayMerge(base: string, local: string, remote: string): Merg
 	const localLines = local.split("\n");
 	const remoteLines = remote.split("\n");
 
-	// Security: Validate line counts
+	// Security: Validate line counts to prevent excessive LCS computation
 	if (
 		baseLines.length > MAX_LINE_COUNT ||
 		localLines.length > MAX_LINE_COUNT ||
@@ -105,6 +103,14 @@ interface Diff {
 }
 
 /**
+ * Check if two diff ranges overlap
+ */
+function rangesOverlap(a: DiffChange, b: DiffChange): boolean {
+	// Ranges overlap if one starts before the other ends
+	return a.baseStart < b.baseEnd && b.baseStart < a.baseEnd;
+}
+
+/**
  * Merge lines using a diff-based algorithm
  */
 function mergeLines(base: string[], local: string[], remote: string[]): MergeResult {
@@ -126,30 +132,43 @@ function mergeLines(base: string[], local: string[], remote: string[]): MergeRes
 		const localChange = localDiff.changes[localIndex];
 		const remoteChange = remoteDiff.changes[remoteIndex];
 
-		// If both made changes at the same location
-		if (localChange && remoteChange && localChange.baseStart === remoteChange.baseStart) {
-			// Check if changes are identical
-			if (arraysEqual(localChange.newLines, remoteChange.newLines)) {
+		// Check if both have changes that overlap (conflict)
+		if (localChange && remoteChange && rangesOverlap(localChange, remoteChange)) {
+			// Flush base lines before the conflict region
+			const conflictStart = Math.min(localChange.baseStart, remoteChange.baseStart);
+			while (baseIndex < conflictStart) {
+				merged.push(base[baseIndex]);
+				baseIndex++;
+			}
+
+			// Check if changes are identical (same edit = no conflict)
+			if (
+				localChange.baseStart === remoteChange.baseStart &&
+				localChange.baseEnd === remoteChange.baseEnd &&
+				arraysEqual(localChange.newLines, remoteChange.newLines)
+			) {
 				// Same change, accept it
 				merged.push(...localChange.newLines);
+				baseIndex = localChange.baseEnd;
 				localIndex++;
 				remoteIndex++;
-				baseIndex = Math.max(localChange.baseEnd, baseIndex);
 			} else {
-				// Different changes at same location = conflict
+				// Different overlapping changes = conflict
+				const conflictEnd = Math.max(localChange.baseEnd, remoteChange.baseEnd);
 				conflicts.push({
-					base: base.slice(localChange.baseStart, localChange.baseEnd),
+					base: base.slice(conflictStart, conflictEnd),
 					local: localChange.newLines,
 					remote: remoteChange.newLines,
 					startLine: merged.length,
 				});
 
+				baseIndex = conflictEnd;
 				localIndex++;
 				remoteIndex++;
-				baseIndex = Math.max(localChange.baseEnd, baseIndex);
 			}
 		} else if (localChange && (!remoteChange || localChange.baseStart < remoteChange.baseStart)) {
 			// Only local changed at this location
+			// Flush base lines before the change
 			while (baseIndex < localChange.baseStart) {
 				merged.push(base[baseIndex]);
 				baseIndex++;
@@ -159,6 +178,7 @@ function mergeLines(base: string[], local: string[], remote: string[]): MergeRes
 			localIndex++;
 		} else if (remoteChange && (!localChange || remoteChange.baseStart < localChange.baseStart)) {
 			// Only remote changed at this location
+			// Flush base lines before the change
 			while (baseIndex < remoteChange.baseStart) {
 				merged.push(base[baseIndex]);
 				baseIndex++;
@@ -177,7 +197,7 @@ function mergeLines(base: string[], local: string[], remote: string[]): MergeRes
 		}
 	}
 
-	// If conflicts were detected, return early
+	// If conflicts were detected, return early without content
 	if (conflicts.length > 0) {
 		return {
 			success: false,
@@ -245,11 +265,15 @@ function computeDiff(base: string[], modified: string[]): Diff {
 }
 
 /**
- * Find longest common subsequence of two arrays
+ * Find longest common subsequence of two arrays.
+ * Uses standard DP algorithm with O(m*n) time and space complexity.
+ * MAX_LINE_COUNT limits input size to keep memory usage reasonable.
  */
 function longestCommonSubsequence(a: string[], b: string[]): string[] {
 	const m = a.length;
 	const n = b.length;
+
+	// Create DP table - worst case 2000x2000 = 4M cells = ~16MB
 	const dp: number[][] = Array(m + 1)
 		.fill(0)
 		.map(() => Array(n + 1).fill(0));

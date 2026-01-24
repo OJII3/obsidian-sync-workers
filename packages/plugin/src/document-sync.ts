@@ -309,15 +309,19 @@ export class DocumentSync {
 						// Merge succeeded - apply the merged content
 						await updateFileContent(this.app, this.vault, file, mergeResult.content);
 
-						// Update metadata and baseContent with the merged result
-						const actualMtime = await getFileMtime(this.vault, path);
-						metadataCache.set(path, {
-							path,
-							rev: doc._rev,
-							lastModified: actualMtime,
-						});
-						await this.baseContentStore.set(path, mergeResult.content);
-						await this.metadataManager.persistCache();
+						// IMPORTANT: Don't update lastModified so push phase will detect this as changed.
+						// Set baseContent to remoteContent (not merged content) so push sends the diff.
+						// The merged content contains local changes that need to be pushed to server.
+						await this.baseContentStore.set(path, remoteContent);
+						// Update rev to prevent re-pulling the same change
+						if (localMeta) {
+							metadataCache.set(path, {
+								...localMeta,
+								rev: doc._rev,
+								// Keep original lastModified so file appears "modified" to push phase
+							});
+							await this.metadataManager.persistCache();
+						}
 						return true;
 					}
 
@@ -327,6 +331,7 @@ export class DocumentSync {
 						current_content: remoteContent,
 						current_rev: doc._rev,
 						conflicts: mergeResult.conflicts,
+						reason: mergeResult.error, // Pass merge error for logging/display
 					});
 					return resolution !== ConflictResolution.Cancel;
 				}
