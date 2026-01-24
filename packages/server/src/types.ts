@@ -39,7 +39,7 @@ export interface DocumentInput {
 	_rev?: string;
 	content?: string;
 	_deleted?: boolean;
-	_base_content?: string; // For three-way merge: last synced content
+	// Note: baseContent is now managed server-side (fetched from revisions table using _rev)
 }
 
 export interface BulkDocsRequest {

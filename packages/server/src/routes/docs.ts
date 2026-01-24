@@ -24,9 +24,11 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 				// Check revision if provided
 				if (doc._rev && doc._rev !== existing.rev) {
 					// Revision conflict detected
-					// Try three-way merge if base content is provided
-					if (doc._base_content && doc.content && existing.content) {
-						const mergeResult = threeWayMerge(doc._base_content, existing.content, doc.content);
+					// Fetch baseContent from revisions table (server-side baseContent management)
+					const baseContent = await db.getRevisionContent(doc._id, vaultId, doc._rev);
+
+					if (baseContent !== null && doc.content && existing.content) {
+						const mergeResult = threeWayMerge(baseContent, existing.content, doc.content);
 
 						if (mergeResult.success && mergeResult.content) {
 							// Merge succeeded, use merged content
@@ -60,11 +62,19 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 						});
 						continue;
 					}
-					// No base content provided, cannot merge
+					// Determine specific error reason
+					let reason: string;
+					if (baseContent === null) {
+						reason = "Base revision not found - full sync required";
+					} else if (!doc.content || !existing.content) {
+						reason = "Content missing for merge operation";
+					} else {
+						reason = "Document update conflict";
+					}
 					results.push({
 						id: doc._id,
 						error: "conflict",
-						reason: "Document update conflict",
+						reason,
 						current_content: existing.content,
 						current_rev: existing.rev,
 					});

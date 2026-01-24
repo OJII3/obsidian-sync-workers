@@ -1,7 +1,6 @@
 import type { App, Vault } from "obsidian";
 import { AttachmentSync } from "./attachment-sync";
 import { buildAuthHeaders } from "./auth";
-import { type BaseContentStore, getBaseContentStore } from "./base-content-store";
 import { ConflictResolver } from "./conflict-resolver";
 import { DocumentSync } from "./document-sync";
 import { MetadataManager } from "./metadata-manager";
@@ -27,13 +26,11 @@ export class SyncService {
 	private vault: Vault;
 	private settings: SyncSettings;
 	private syncInProgress = false;
-	private baseContentStore: BaseContentStore;
 	private metadataManager: MetadataManager;
 	private conflictResolver: ConflictResolver;
 	private documentSync: DocumentSync;
 	private attachmentSync: AttachmentSync;
 	private onStatusChange: (status: SyncStatus) => void;
-	private baseContentMigration: Promise<void>;
 	private syncStats: SyncStats = {
 		pulled: 0,
 		pushed: 0,
@@ -53,7 +50,6 @@ export class SyncService {
 		this.vault = vault;
 		this.settings = settings;
 		this.onStatusChange = onStatusChange;
-		this.baseContentStore = getBaseContentStore();
 
 		// Configure retry options with exponential backoff
 		this.retryOptions = {
@@ -63,14 +59,14 @@ export class SyncService {
 		};
 
 		// Initialize managers and sync modules
-		this.metadataManager = new MetadataManager(settings, this.baseContentStore, saveSettings);
+		// Note: baseContent is now managed server-side, so no IndexedDB store needed
+		this.metadataManager = new MetadataManager(settings, saveSettings);
 
 		this.conflictResolver = new ConflictResolver(
 			app,
 			vault,
 			settings,
 			this.metadataManager,
-			this.baseContentStore,
 			this.retryOptions,
 		);
 
@@ -79,7 +75,6 @@ export class SyncService {
 			vault,
 			settings,
 			this.metadataManager,
-			this.baseContentStore,
 			this.conflictResolver,
 			this.retryOptions,
 		);
@@ -90,9 +85,6 @@ export class SyncService {
 			this.metadataManager,
 			this.retryOptions,
 		);
-
-		// Migrate existing baseContent to IndexedDB in background
-		this.baseContentMigration = this.metadataManager.migrateBaseContentToIndexedDB();
 	}
 
 	updateSettings(settings: SyncSettings) {
@@ -120,8 +112,6 @@ export class SyncService {
 		};
 
 		try {
-			await this.baseContentMigration;
-
 			// Step 0: Quick status check to avoid unnecessary full sync
 			const status = await this.checkStatus();
 

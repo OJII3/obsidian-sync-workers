@@ -333,7 +333,191 @@ bun run build:plugin      # プラグインビルド
 - `packages/server/src/utils/merge.ts`: 3-way mergeアルゴリズム
 - `packages/plugin/src/conflict-modal.ts`: 競合解決UI
 - `packages/plugin/src/sync-service.ts`: 競合ハンドリングロジック
-- メタデータに`baseContent`を保存して、次回の同期でマージに使用
+
+### サーバー側 baseContent 管理（設計中）
+
+従来はクライアント側でbaseContent（前回同期時のコンテンツ）をIndexedDBに保存していたが、モバイルでのIndexedDBの不安定さ（iOS Safariのバグ、WebView制限、バックグラウンドでのデータ消失）を回避するため、サーバー側でbaseContentを管理する方式に移行する。
+
+#### 基本方針
+
+- `revisions`テーブルにはすでに過去のコンテンツが保存されている
+- クライアントは`_rev`（前回同期時のリビジョン）を送信
+- サーバーは`_rev`に対応するコンテンツをbaseContentとして取得し、3-way mergeを実行
+- クライアント側のbaseContent保存が不要になり、モバイルでも安定動作
+
+#### シーケンス図
+
+##### ケース1: 正常同期（競合なし）
+
+クライアントAが編集→同期、その後クライアントBが同期。競合は発生しない。
+
+```mermaid
+sequenceDiagram
+    participant A as クライアントA
+    participant S as サーバー
+    participant B as クライアントB
+
+    Note over A,B: 初期状態: 全員が rev=1-xxx, content="Hello" を持つ
+
+    A->>A: content を "Hello World" に編集
+    A->>S: PUT /docs/test (_rev=1-xxx, content="Hello World")
+    S->>S: rev=1-xxx が現在のrevと一致 → 競合なし
+    S->>S: 新しい rev=2-yyy を生成、保存
+    S-->>A: { ok: true, rev: 2-yyy }
+    A->>A: ローカルの _rev を 2-yyy に更新
+
+    Note over B: しばらく後...
+
+    B->>S: GET /changes?since=0
+    S-->>B: [{ id: "test", rev: 2-yyy }]
+    B->>S: GET /docs/test
+    S-->>B: { content: "Hello World", _rev: 2-yyy }
+    B->>B: ローカルを更新、_rev を 2-yyy に
+```
+
+##### ケース2: 競合あり・自動マージ成功
+
+クライアントAとBが同時に異なる箇所を編集。サーバー側で3-way mergeが成功。
+
+```mermaid
+sequenceDiagram
+    participant A as クライアントA
+    participant S as サーバー
+    participant B as クライアントB
+
+    Note over A,B: 初期状態: 全員が rev=1-xxx を持つ
+    Note over A,B: content = "Line1<br/>Line2<br/>Line3"
+
+    A->>A: Line1 を "Line1-A" に編集
+    B->>B: Line3 を "Line3-B" に編集
+
+    A->>S: PUT /docs/test (_rev=1-xxx, content="Line1-A...")
+    S->>S: 競合なし、rev=2-yyy を生成
+    S-->>A: { ok: true, rev: 2-yyy }
+
+    Note over B: Bはまだ古いrevを持っている
+
+    B->>S: PUT /docs/test (_rev=1-xxx, content="...Line3-B")
+    S->>S: rev=1-xxx ≠ 現在の2-yyy → 競合検出
+    S->>S: revisions から rev=1-xxx のコンテンツを取得（= base）
+    S->>S: 3-way merge(base, server=2-yyy, client=B's content)
+    S->>S: マージ成功! "Line1-A<br/>Line2<br/>Line3-B"
+    S->>S: rev=3-zzz を生成、保存
+    S-->>B: { ok: true, rev: 3-zzz, merged: true }
+    B->>B: ローカルの _rev を 3-zzz に更新
+
+    Note over A: 次の同期で...
+    A->>S: GET /changes?since=...
+    S-->>A: [{ id: "test", rev: 3-zzz }]
+    A->>S: GET /docs/test
+    S-->>A: { content: "Line1-A<br/>Line2<br/>Line3-B", _rev: 3-zzz }
+```
+
+##### ケース3: 競合あり・手動解決必要
+
+クライアントAとBが同じ行を編集。3-way mergeが失敗し、ユーザーに解決を促す。
+
+```mermaid
+sequenceDiagram
+    participant A as クライアントA
+    participant S as サーバー
+    participant B as クライアントB
+
+    Note over A,B: 初期状態: 全員が rev=1-xxx を持つ
+    Note over A,B: content = "Hello"
+
+    A->>A: "Hello" を "Hello from A" に編集
+    B->>B: "Hello" を "Hello from B" に編集
+
+    A->>S: PUT /docs/test (_rev=1-xxx, content="Hello from A")
+    S->>S: 競合なし、rev=2-yyy を生成
+    S-->>A: { ok: true, rev: 2-yyy }
+
+    B->>S: PUT /docs/test (_rev=1-xxx, content="Hello from B")
+    S->>S: rev=1-xxx ≠ 現在の2-yyy → 競合検出
+    S->>S: revisions から rev=1-xxx のコンテンツを取得（= base）
+    S->>S: 3-way merge(base="Hello", server="Hello from A", client="Hello from B")
+    S->>S: マージ失敗（同じ行の異なる変更）
+    S-->>B: { error: "conflict", current_content: "Hello from A", current_rev: 2-yyy }
+
+    B->>B: 競合モーダルを表示
+    alt ユーザーがローカル版を選択
+        B->>S: PUT /docs/test (_rev=2-yyy, content="Hello from B")
+        S-->>B: { ok: true, rev: 3-zzz }
+    else ユーザーがリモート版を選択
+        B->>B: ローカルを "Hello from A" に更新
+        B->>B: _rev を 2-yyy に更新
+    end
+```
+
+##### ケース4: 長期オフライン後の同期
+
+クライアントが長期間オフラインで、その間に他のクライアントが複数回更新。
+
+```mermaid
+sequenceDiagram
+    participant A as クライアントA（オンライン）
+    participant S as サーバー
+    participant B as クライアントB（オフライン）
+
+    Note over A,B: 初期状態: 全員が rev=1-xxx を持つ
+
+    B->>B: オフラインになる
+    B->>B: content を編集（ローカルのみ）
+
+    A->>S: PUT (rev=1→2)
+    A->>S: PUT (rev=2→3)
+    A->>S: PUT (rev=3→4)
+
+    Note over S: revisions テーブルに<br/>rev=1,2,3,4 の全履歴が残る
+
+    B->>B: オンラインに復帰
+
+    B->>S: PUT /docs/test (_rev=1-xxx, content=B's edits)
+    S->>S: rev=1-xxx ≠ 現在の4-www → 競合検出
+    S->>S: revisions から rev=1-xxx のコンテンツを取得
+    alt rev=1-xxx がまだ存在する
+        S->>S: 3-way merge を試行
+        S-->>B: マージ結果（成功 or 競合）
+    else rev=1-xxx が cleanup で削除済み
+        S-->>B: { error: "conflict", reason: "Base revision not found - full sync required", current_content: ..., current_rev: 4-www }
+        B->>B: フルリセット or 手動マージが必要
+    end
+```
+
+#### API変更点
+
+現在の`PUT /api/docs/:id`リクエスト:
+```json
+{
+  "_id": "test.md",
+  "_rev": "1-xxx",
+  "content": "new content",
+  "_base_content": "old content"  // ← クライアントが送信（削除予定）
+}
+```
+
+新しいリクエスト:
+```json
+{
+  "_id": "test.md",
+  "_rev": "1-xxx",
+  "content": "new content"
+  // _base_content は不要（サーバーが revisions から取得）
+}
+```
+
+#### 実装タスク
+
+1. **サーバー側**
+   - [x] `revisions`テーブルから指定revのコンテンツを取得するクエリ追加
+   - [x] 競合検出時に自動でbaseContentを取得してマージ
+   - [x] baseが見つからない場合のエラーハンドリング
+
+2. **クライアント側**
+   - [x] `_base_content`の送信を削除
+   - [x] IndexedDB依存を削除
+   - [x] `base-content-store.ts`を削除
 
 ## アタッチメント同期機能の詳細
 
