@@ -114,12 +114,15 @@ export class DocumentSync {
 		const docsToUpdate: DocumentInput[] = [];
 		const currentFilePaths = new Set<string>();
 		const metadataCache = this.metadataManager.getMetadataCache();
+		// Track file mtime at push time to detect interim edits when pulling merged content
+		const pushTimeMtimes = new Map<string, number>();
 
 		// Check for modified files
 		for (const file of files) {
 			currentFilePaths.add(file.path);
 			const metadata = metadataCache.get(file.path);
-			const fileModTime = file.stat.mtime;
+			// Get accurate mtime from disk
+			const fileModTime = await getFileMtime(this.vault, file.path);
 
 			// Check if file has been modified since last sync
 			if (!metadata || fileModTime > metadata.lastModified) {
@@ -128,6 +131,9 @@ export class DocumentSync {
 
 				// Get baseContent from IndexedDB for 3-way merge
 				const baseContent = await this.baseContentStore.get(file.path);
+
+				// Store mtime at push time to verify file hasn't changed when pulling merged content
+				pushTimeMtimes.set(docId, fileModTime);
 
 				docsToUpdate.push({
 					_id: docId,
@@ -193,9 +199,10 @@ export class DocumentSync {
 
 				if (result.merged) {
 					// Automatic merge was performed on the server
-					// Pull the merged content (skip conflict check since we know we want the merged result)
+					// Pull the merged content, but only skip conflict check if file hasn't changed since push
+					const expectedMtime = pushTimeMtimes.get(result.id);
 					try {
-						await this.pullDocument(result.id, true);
+						await this.pullDocument(result.id, expectedMtime);
 						syncStats.pushed++;
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
@@ -204,7 +211,7 @@ export class DocumentSync {
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with actual file mtime
 					const content = await this.vault.read(file);
-					const actualMtime = getFileMtime(this.vault, path);
+					const actualMtime = await getFileMtime(this.vault, path);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
@@ -234,10 +241,11 @@ export class DocumentSync {
 	/**
 	 * Pull a document from the server and update the local file.
 	 * @param docId - The document ID to pull
-	 * @param skipConflictCheck - If true, skip conflict detection (used for pulling merged content)
+	 * @param expectedMtime - If provided, only skip conflict check if file mtime matches this value
+	 *                        (used to safely pull merged content without overwriting interim edits)
 	 * @returns true if successful or conflict resolved, false if cancelled
 	 */
-	private async pullDocument(docId: string, skipConflictCheck = false): Promise<boolean> {
+	private async pullDocument(docId: string, expectedMtime?: number): Promise<boolean> {
 		const url = `${this.settings.serverUrl}/api/docs/${encodeURIComponent(
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
@@ -269,8 +277,15 @@ export class DocumentSync {
 				return true;
 			}
 
-			// Check for local modifications (unless we're pulling merged content)
-			if (!skipConflictCheck && this.isLocalModified(file, localMeta)) {
+			// Get current file mtime from disk
+			const currentMtime = await getFileMtime(this.vault, path);
+
+			// Determine if we should check for conflicts
+			// If expectedMtime is provided, only skip conflict check if file hasn't changed since push
+			const shouldSkipConflictCheck = expectedMtime !== undefined && currentMtime <= expectedMtime;
+
+			// Check for local modifications
+			if (!shouldSkipConflictCheck && this.isLocalModified(file, localMeta)) {
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
 					current_content: content,
@@ -306,7 +321,7 @@ export class DocumentSync {
 		}
 
 		// Get the actual file mtime after writing (critical for correct change detection)
-		const actualMtime = getFileMtime(this.vault, path);
+		const actualMtime = await getFileMtime(this.vault, path);
 
 		// Update metadata cache with actual mtime (without baseContent - it's now in IndexedDB)
 		metadataCache.set(path, {

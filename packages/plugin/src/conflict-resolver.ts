@@ -75,7 +75,7 @@ export class ConflictResolver {
 				} else {
 					await updateFileContent(this.app, this.vault, file, remoteContent);
 					// Get actual mtime after file update (critical for correct change detection)
-					const actualMtime = getFileMtime(this.vault, path);
+					const actualMtime = await getFileMtime(this.vault, path);
 					this.metadataManager.getMetadataCache().set(path, {
 						path,
 						rev: result.current_rev || "",
@@ -123,7 +123,7 @@ export class ConflictResolver {
 		if (result.ok && result.rev) {
 			const path = docIdToPath(docId);
 			// Get actual mtime from the file (it wasn't modified, we just pushed it)
-			const actualMtime = getFileMtime(this.vault, path);
+			const actualMtime = await getFileMtime(this.vault, path);
 			this.metadataManager.getMetadataCache().set(path, {
 				path,
 				rev: result.rev,

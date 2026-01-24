@@ -17,15 +17,25 @@ export async function updateFileContent(
 
 /**
  * Get the actual file modification time from the file system.
+ * Uses vault.adapter.stat() for on-disk accuracy instead of in-memory TFile.stat.
  * This should be called after any file write operation to get the
  * accurate mtime for metadata tracking.
  */
-export function getFileMtime(vault: Vault, path: string): number {
+export async function getFileMtime(vault: Vault, path: string): Promise<number> {
+	try {
+		const stat = await vault.adapter.stat(path);
+		if (stat) {
+			return stat.mtime;
+		}
+	} catch {
+		// Fall through to fallback
+	}
+	// Fallback to in-memory stat if adapter.stat fails
 	const file = vault.getAbstractFileByPath(path);
 	if (file instanceof TFile) {
 		return file.stat.mtime;
 	}
-	// Fallback to current time if file not found (shouldn't happen)
+	// Last resort fallback to current time (shouldn't happen)
 	return Date.now();
 }
 
