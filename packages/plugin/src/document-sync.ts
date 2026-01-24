@@ -3,6 +3,7 @@ import { buildAuthHeaders } from "./auth";
 import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
+import { threeWayMerge } from "./merge";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import { docIdToPath, getFileMtime, pathToDocId, updateFileContent } from "./sync-utils";
@@ -272,7 +273,7 @@ export class DocumentSync {
 		}
 
 		const doc: DocumentResponse = await response.json();
-		const content = doc.content;
+		const remoteContent = doc.content;
 
 		// Check if local file exists
 		const path = docIdToPath(doc._id);
@@ -296,16 +297,56 @@ export class DocumentSync {
 			// Check for local modifications using fresh disk mtime (not stale file.stat.mtime)
 			const isModified = !localMeta || currentMtime > localMeta.lastModified;
 			if (!shouldSkipConflictCheck && isModified) {
+				// Local file has been modified - try to merge (Git-style client-side merge)
+				const localContent = await this.vault.read(file);
+				const baseContent = await this.baseContentStore.get(path);
+
+				if (baseContent !== undefined) {
+					// We have a base content, attempt 3-way merge
+					const mergeResult = threeWayMerge(baseContent, localContent, remoteContent);
+
+					if (mergeResult.success && mergeResult.content !== undefined) {
+						// Merge succeeded - apply the merged content
+						await updateFileContent(this.app, this.vault, file, mergeResult.content);
+
+						// IMPORTANT: Don't update lastModified so push phase will detect this as changed.
+						// Set baseContent to remoteContent (not merged content) so push sends the diff.
+						// The merged content contains local changes that need to be pushed to server.
+						await this.baseContentStore.set(path, remoteContent);
+						// Update rev to prevent re-pulling the same change
+						if (localMeta) {
+							metadataCache.set(path, {
+								...localMeta,
+								rev: doc._rev,
+								// Keep original lastModified so file appears "modified" to push phase
+							});
+							await this.metadataManager.persistCache();
+						}
+						return true;
+					}
+
+					// Merge failed - show conflict resolution with merge conflict info
+					const resolution = await this.conflictResolver.handleConflict({
+						id: doc._id,
+						current_content: remoteContent,
+						current_rev: doc._rev,
+						conflicts: mergeResult.conflicts,
+						reason: mergeResult.error, // Pass merge error for logging/display
+					});
+					return resolution !== ConflictResolution.Cancel;
+				}
+
+				// No base content available - fall back to conflict resolution
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
-					current_content: content,
+					current_content: remoteContent,
 					current_rev: doc._rev,
 				});
 				return resolution !== ConflictResolution.Cancel;
 			}
 
-			// Update file with content
-			await updateFileContent(this.app, this.vault, file, content);
+			// No local modifications - safe to apply remote content
+			await updateFileContent(this.app, this.vault, file, remoteContent);
 		} else {
 			// Create new file, ensuring parent folders exist
 			const lastSlashIndex = path.lastIndexOf("/");
@@ -327,7 +368,7 @@ export class DocumentSync {
 					}
 				}
 			}
-			await this.vault.create(path, content);
+			await this.vault.create(path, remoteContent);
 		}
 
 		// Get the actual file mtime after writing (critical for correct change detection)
@@ -341,7 +382,7 @@ export class DocumentSync {
 		});
 
 		// Store baseContent in IndexedDB for future 3-way merges
-		await this.baseContentStore.set(path, content);
+		await this.baseContentStore.set(path, remoteContent);
 
 		await this.metadataManager.persistCache();
 		return true;

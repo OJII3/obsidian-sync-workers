@@ -35,6 +35,14 @@ export class ConflictResolver {
 		const path = docIdToPath(result.id);
 		const file = this.vault.getAbstractFileByPath(path);
 
+		// Log conflict details for debugging
+		if (result.reason) {
+			console.warn(`Sync conflict for ${path}: ${result.reason}`);
+		}
+		if (result.conflicts && result.conflicts.length > 0) {
+			console.warn(`Merge conflicts in ${path}:`, result.conflicts.length, "regions");
+		}
+
 		if (!(file instanceof TFile)) {
 			console.error(`Cannot resolve conflict: file not found ${path}`);
 			return ConflictResolution.Cancel;
