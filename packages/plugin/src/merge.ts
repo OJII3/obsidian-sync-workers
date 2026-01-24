@@ -313,3 +313,31 @@ function arraysEqual(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) return false;
 	return a.every((val, idx) => val === b[idx]);
 }
+
+/**
+ * Compute a common base from two texts using their longest common subsequence.
+ * This is useful when no saved base content is available - it allows merging
+ * non-overlapping changes even without a historical base.
+ *
+ * @param local - The local content
+ * @param remote - The remote content
+ * @returns The LCS of local and remote as a string (to use as base for 3-way merge)
+ */
+export function computeCommonBase(local: string, remote: string): string {
+	// Security: Validate content sizes
+	if (local.length > MAX_CONTENT_SIZE || remote.length > MAX_CONTENT_SIZE) {
+		// Return empty string as fallback - will likely result in conflict
+		return "";
+	}
+
+	const localLines = local.split("\n");
+	const remoteLines = remote.split("\n");
+
+	// Security: Validate line counts
+	if (localLines.length > MAX_LINE_COUNT || remoteLines.length > MAX_LINE_COUNT) {
+		return "";
+	}
+
+	const lcs = longestCommonSubsequence(localLines, remoteLines);
+	return lcs.join("\n");
+}

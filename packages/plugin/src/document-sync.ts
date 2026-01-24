@@ -3,7 +3,7 @@ import { buildAuthHeaders } from "./auth";
 import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
-import { threeWayMerge } from "./merge";
+import { computeCommonBase, threeWayMerge } from "./merge";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import { docIdToPath, getFileMtime, pathToDocId, updateFileContent } from "./sync-utils";
@@ -336,11 +336,35 @@ export class DocumentSync {
 					return resolution !== ConflictResolution.Cancel;
 				}
 
-				// No base content available - fall back to conflict resolution
+				// No base content available - compute common base from LCS of local and remote
+				// This allows merging non-overlapping changes even without a saved base
+				const computedBase = computeCommonBase(localContent, remoteContent);
+				const mergeResult = threeWayMerge(computedBase, localContent, remoteContent);
+
+				if (mergeResult.success && mergeResult.content !== undefined) {
+					// Auto-merge succeeded using computed base
+					await updateFileContent(this.app, this.vault, file, mergeResult.content);
+
+					// Set baseContent to remoteContent so push sends the diff
+					await this.baseContentStore.set(path, remoteContent);
+					// Update rev to prevent re-pulling the same change
+					if (localMeta) {
+						metadataCache.set(path, {
+							...localMeta,
+							rev: doc._rev,
+							// Keep original lastModified so file appears "modified" to push phase
+						});
+						await this.metadataManager.persistCache();
+					}
+					return true;
+				}
+
+				// Merge failed - show conflict resolution
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
 					current_content: remoteContent,
 					current_rev: doc._rev,
+					conflicts: mergeResult.conflicts,
 				});
 				return resolution !== ConflictResolution.Cancel;
 			}
