@@ -118,30 +118,39 @@ export class DocumentSync {
 		const pushTimeMtimes = new Map<string, number>();
 
 		// Check for modified files
+		// Use in-memory stat for initial check to avoid disk I/O for unchanged files
 		for (const file of files) {
 			currentFilePaths.add(file.path);
 			const metadata = metadataCache.get(file.path);
-			// Get accurate mtime from disk
+
+			// Quick check using in-memory mtime to avoid disk I/O for unchanged files
+			if (metadata && file.stat.mtime <= metadata.lastModified) {
+				continue;
+			}
+
+			// File appears modified - get accurate mtime from disk for the push
 			const fileModTime = await getFileMtime(this.vault, file.path);
 
-			// Check if file has been modified since last sync
-			if (!metadata || fileModTime > metadata.lastModified) {
-				const content = await this.vault.read(file);
-				const docId = pathToDocId(file.path);
-
-				// Get baseContent from IndexedDB for 3-way merge
-				const baseContent = await this.baseContentStore.get(file.path);
-
-				// Store mtime at push time to verify file hasn't changed when pulling merged content
-				pushTimeMtimes.set(docId, fileModTime);
-
-				docsToUpdate.push({
-					_id: docId,
-					_rev: metadata?.rev,
-					content,
-					_base_content: baseContent,
-				});
+			// Double-check with accurate disk mtime (in-memory might be slightly off)
+			if (metadata && fileModTime <= metadata.lastModified) {
+				continue;
 			}
+
+			const content = await this.vault.read(file);
+			const docId = pathToDocId(file.path);
+
+			// Get baseContent from IndexedDB for 3-way merge
+			const baseContent = await this.baseContentStore.get(file.path);
+
+			// Store mtime at push time to verify file hasn't changed when pulling merged content
+			pushTimeMtimes.set(docId, fileModTime);
+
+			docsToUpdate.push({
+				_id: docId,
+				_rev: metadata?.rev,
+				content,
+				_base_content: baseContent,
+			});
 		}
 
 		// Check for deleted files
@@ -241,7 +250,7 @@ export class DocumentSync {
 	/**
 	 * Pull a document from the server and update the local file.
 	 * @param docId - The document ID to pull
-	 * @param expectedMtime - If provided, only skip conflict check if file mtime matches this value
+	 * @param expectedMtime - If provided, only skip conflict check if current file mtime <= expectedMtime
 	 *                        (used to safely pull merged content without overwriting interim edits)
 	 * @returns true if successful or conflict resolved, false if cancelled
 	 */
@@ -277,15 +286,16 @@ export class DocumentSync {
 				return true;
 			}
 
-			// Get current file mtime from disk
+			// Get current file mtime from disk for accurate comparison
 			const currentMtime = await getFileMtime(this.vault, path);
 
 			// Determine if we should check for conflicts
 			// If expectedMtime is provided, only skip conflict check if file hasn't changed since push
 			const shouldSkipConflictCheck = expectedMtime !== undefined && currentMtime <= expectedMtime;
 
-			// Check for local modifications
-			if (!shouldSkipConflictCheck && this.isLocalModified(file, localMeta)) {
+			// Check for local modifications using fresh disk mtime (not stale file.stat.mtime)
+			const isModified = !localMeta || currentMtime > localMeta.lastModified;
+			if (!shouldSkipConflictCheck && isModified) {
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
 					current_content: content,

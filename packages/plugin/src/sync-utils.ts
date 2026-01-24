@@ -16,25 +16,40 @@ export async function updateFileContent(
 }
 
 /**
- * Get the actual file modification time from the file system.
- * Uses vault.adapter.stat() for on-disk accuracy instead of in-memory TFile.stat.
+ * Get the actual file modification time.
+ * Returns the maximum of disk mtime and in-memory TFile.stat.mtime to handle:
+ * - Normal writes via vault.process(): both values are in sync
+ * - Editor writes via editor.setValue(): TFile.stat is updated immediately,
+ *   but disk may not be flushed yet (adapter.stat returns stale value)
+ *
  * This should be called after any file write operation to get the
  * accurate mtime for metadata tracking.
  */
 export async function getFileMtime(vault: Vault, path: string): Promise<number> {
+	let diskMtime = 0;
+	let memoryMtime = 0;
+
+	// Get disk mtime via adapter.stat
 	try {
 		const stat = await vault.adapter.stat(path);
 		if (stat) {
-			return stat.mtime;
+			diskMtime = stat.mtime;
 		}
 	} catch {
-		// Fall through to fallback
+		// Ignore errors, will use memory mtime
 	}
-	// Fallback to in-memory stat if adapter.stat fails
+
+	// Get in-memory mtime from TFile (may be newer for unsaved editor changes)
 	const file = vault.getAbstractFileByPath(path);
 	if (file instanceof TFile) {
-		return file.stat.mtime;
+		memoryMtime = file.stat.mtime;
 	}
+
+	// Return the maximum to handle editor writes that haven't flushed to disk
+	if (diskMtime > 0 || memoryMtime > 0) {
+		return Math.max(diskMtime, memoryMtime);
+	}
+
 	// Last resort fallback to current time (shouldn't happen)
 	return Date.now();
 }
