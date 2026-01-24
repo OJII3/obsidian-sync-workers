@@ -1,6 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
 import { buildAuthHeaders } from "./auth";
-import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
 import { computeCommonBase, threeWayMerge } from "./merge";
@@ -21,7 +20,6 @@ export class DocumentSync {
 	private vault: Vault;
 	private settings: SyncSettings;
 	private metadataManager: MetadataManager;
-	private baseContentStore: BaseContentStore;
 	private conflictResolver: ConflictResolver;
 	private retryOptions: RetryOptions;
 	private onProgress?: (current: number, total: number) => void;
@@ -31,7 +29,6 @@ export class DocumentSync {
 		vault: Vault,
 		settings: SyncSettings,
 		metadataManager: MetadataManager,
-		baseContentStore: BaseContentStore,
 		conflictResolver: ConflictResolver,
 		retryOptions: RetryOptions,
 	) {
@@ -39,7 +36,6 @@ export class DocumentSync {
 		this.vault = vault;
 		this.settings = settings;
 		this.metadataManager = metadataManager;
-		this.baseContentStore = baseContentStore;
 		this.conflictResolver = conflictResolver;
 		this.retryOptions = retryOptions;
 	}
@@ -140,17 +136,15 @@ export class DocumentSync {
 			const content = await this.vault.read(file);
 			const docId = pathToDocId(file.path);
 
-			// Get baseContent from IndexedDB for 3-way merge
-			const baseContent = await this.baseContentStore.get(file.path);
-
 			// Store mtime at push time to verify file hasn't changed when pulling merged content
 			pushTimeMtimes.set(docId, fileModTime);
 
+			// Server-side baseContent management: no _base_content needed
+			// Server will fetch baseContent from revisions table using _rev
 			docsToUpdate.push({
 				_id: docId,
 				_rev: metadata?.rev,
 				content,
-				_base_content: baseContent,
 			});
 		}
 
@@ -220,20 +214,16 @@ export class DocumentSync {
 					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with actual file mtime
-					const content = await this.vault.read(file);
 					const actualMtime = await getFileMtime(this.vault, path);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
 						lastModified: actualMtime,
 					});
-					// Store baseContent in IndexedDB (the content we just pushed is now the base)
-					await this.baseContentStore.set(path, content);
 					syncStats.pushed++;
 				} else {
 					// File doesn't exist (was deleted), remove from cache
 					metadataCache.delete(path);
-					await this.baseContentStore.delete(path);
 					syncStats.pushed++;
 				}
 			} else if (result.error === "conflict") {
@@ -297,47 +287,9 @@ export class DocumentSync {
 			// Check for local modifications using fresh disk mtime (not stale file.stat.mtime)
 			const isModified = !localMeta || currentMtime > localMeta.lastModified;
 			if (!shouldSkipConflictCheck && isModified) {
-				// Local file has been modified - try to merge (Git-style client-side merge)
+				// Local file has been modified - try to merge using computed common base
+				// (Server manages baseContent, so we use LCS-based merge on client)
 				const localContent = await this.vault.read(file);
-				const baseContent = await this.baseContentStore.get(path);
-
-				if (baseContent !== undefined) {
-					// We have a base content, attempt 3-way merge
-					const mergeResult = threeWayMerge(baseContent, localContent, remoteContent);
-
-					if (mergeResult.success && mergeResult.content !== undefined) {
-						// Merge succeeded - apply the merged content
-						await updateFileContent(this.app, this.vault, file, mergeResult.content);
-
-						// IMPORTANT: Don't update lastModified so push phase will detect this as changed.
-						// Set baseContent to remoteContent (not merged content) so push sends the diff.
-						// The merged content contains local changes that need to be pushed to server.
-						await this.baseContentStore.set(path, remoteContent);
-						// Update rev to prevent re-pulling the same change
-						if (localMeta) {
-							metadataCache.set(path, {
-								...localMeta,
-								rev: doc._rev,
-								// Keep original lastModified so file appears "modified" to push phase
-							});
-							await this.metadataManager.persistCache();
-						}
-						return true;
-					}
-
-					// Merge failed - show conflict resolution with merge conflict info
-					const resolution = await this.conflictResolver.handleConflict({
-						id: doc._id,
-						current_content: remoteContent,
-						current_rev: doc._rev,
-						conflicts: mergeResult.conflicts,
-						reason: mergeResult.error, // Pass merge error for logging/display
-					});
-					return resolution !== ConflictResolution.Cancel;
-				}
-
-				// No base content available - compute common base from LCS of local and remote
-				// This allows merging non-overlapping changes even without a saved base
 				const computedBase = computeCommonBase(localContent, remoteContent);
 				const mergeResult = threeWayMerge(computedBase, localContent, remoteContent);
 
@@ -345,14 +297,12 @@ export class DocumentSync {
 					// Auto-merge succeeded using computed base
 					await updateFileContent(this.app, this.vault, file, mergeResult.content);
 
-					// Set baseContent to remoteContent so push sends the diff
-					await this.baseContentStore.set(path, remoteContent);
 					// Update rev to prevent re-pulling the same change
+					// Keep original lastModified so file appears "modified" to push phase
 					if (localMeta) {
 						metadataCache.set(path, {
 							...localMeta,
 							rev: doc._rev,
-							// Keep original lastModified so file appears "modified" to push phase
 						});
 						await this.metadataManager.persistCache();
 					}
@@ -399,15 +349,12 @@ export class DocumentSync {
 		// Get the actual file mtime after writing (critical for correct change detection)
 		const actualMtime = await getFileMtime(this.vault, path);
 
-		// Update metadata cache with actual mtime (without baseContent - it's now in IndexedDB)
+		// Update metadata cache with actual mtime
 		metadataCache.set(path, {
 			path,
 			rev: doc._rev,
 			lastModified: actualMtime,
 		});
-
-		// Store baseContent in IndexedDB for future 3-way merges
-		await this.baseContentStore.set(path, remoteContent);
 
 		await this.metadataManager.persistCache();
 		return true;
@@ -431,7 +378,6 @@ export class DocumentSync {
 			}
 			await this.vault.delete(file);
 			metadataCache.delete(path);
-			await this.baseContentStore.delete(path);
 			await this.metadataManager.persistCache();
 			return true;
 		}

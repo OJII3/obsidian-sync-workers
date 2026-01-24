@@ -43,7 +43,7 @@ export interface DocumentInput {
 	_rev?: string;
 	content?: string;
 	_deleted?: boolean;
-	_base_content?: string; // For three-way merge: last synced content
+	// Note: baseContent is now managed server-side (fetched from revisions table)
 }
 
 export interface ChangeResult {
@@ -83,7 +83,7 @@ export interface DocMetadata {
 	path: string;
 	rev: string;
 	lastModified: number;
-	baseContent?: string; // For three-way merge: last synced content (migrated to IndexedDB)
+	// Note: baseContent is now managed server-side (no longer stored locally)
 }
 
 // Attachment types

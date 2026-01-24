@@ -1,6 +1,5 @@
 import { type App, TFile, type Vault } from "obsidian";
 import { buildAuthHeaders } from "./auth";
-import type { BaseContentStore } from "./base-content-store";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
@@ -12,7 +11,6 @@ export class ConflictResolver {
 	private vault: Vault;
 	private settings: SyncSettings;
 	private metadataManager: MetadataManager;
-	private baseContentStore: BaseContentStore;
 	private retryOptions: RetryOptions;
 
 	constructor(
@@ -20,14 +18,12 @@ export class ConflictResolver {
 		vault: Vault,
 		settings: SyncSettings,
 		metadataManager: MetadataManager,
-		baseContentStore: BaseContentStore,
 		retryOptions: RetryOptions,
 	) {
 		this.app = app;
 		this.vault = vault;
 		this.settings = settings;
 		this.metadataManager = metadataManager;
-		this.baseContentStore = baseContentStore;
 		this.retryOptions = retryOptions;
 	}
 
@@ -78,7 +74,6 @@ export class ConflictResolver {
 				if (remoteDeleted) {
 					await this.vault.delete(file);
 					this.metadataManager.getMetadataCache().delete(path);
-					await this.baseContentStore.delete(path);
 					await this.metadataManager.persistCache();
 				} else {
 					await updateFileContent(this.app, this.vault, file, remoteContent);
@@ -89,7 +84,6 @@ export class ConflictResolver {
 						rev: result.current_rev || "",
 						lastModified: actualMtime,
 					});
-					await this.baseContentStore.set(path, remoteContent);
 					await this.metadataManager.persistCache();
 				}
 			} catch (error) {
@@ -137,7 +131,6 @@ export class ConflictResolver {
 				rev: result.rev,
 				lastModified: actualMtime,
 			});
-			await this.baseContentStore.set(path, content);
 			await this.metadataManager.persistCache();
 		}
 	}

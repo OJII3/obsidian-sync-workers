@@ -109,6 +109,19 @@ export class Database {
 	}
 
 	/**
+	 * Get the content of a specific revision
+	 * Used for 3-way merge when baseContent is needed
+	 */
+	async getRevisionContent(docId: string, vaultId: string, rev: string): Promise<string | null> {
+		const result = await this.db
+			.prepare("SELECT content FROM revisions WHERE doc_id = ? AND vault_id = ? AND rev = ?")
+			.bind(docId, vaultId, rev)
+			.first<{ content: string | null }>();
+
+		return result?.content ?? null;
+	}
+
+	/**
 	 * Add a change to the changes feed
 	 */
 	async addChange(change: {

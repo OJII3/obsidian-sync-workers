@@ -1,30 +1,19 @@
-import type { BaseContentStore } from "./base-content-store";
 import type { AttachmentMetadata, DocMetadata, SyncSettings } from "./types";
 
 export class MetadataManager {
 	private metadataCache: Map<string, DocMetadata> = new Map();
 	private attachmentCache: Map<string, AttachmentMetadata> = new Map();
-	private baseContentStore: BaseContentStore;
 	private settings: SyncSettings;
 	private saveSettings: () => Promise<void>;
-	private migrationPromise: Promise<void> | null = null;
 
-	constructor(
-		settings: SyncSettings,
-		baseContentStore: BaseContentStore,
-		saveSettings: () => Promise<void>,
-	) {
+	constructor(settings: SyncSettings, saveSettings: () => Promise<void>) {
 		this.settings = settings;
-		this.baseContentStore = baseContentStore;
 		this.saveSettings = saveSettings;
 
 		// Initialize metadata cache from persisted settings
 		if (settings.metadataCache) {
 			for (const [path, metadata] of Object.entries(settings.metadataCache)) {
-				// Don't copy baseContent to memory - it's now in IndexedDB
-				const metaWithoutBase = { ...metadata };
-				delete metaWithoutBase.baseContent;
-				this.metadataCache.set(path, metaWithoutBase);
+				this.metadataCache.set(path, metadata);
 			}
 		}
 
@@ -42,52 +31,6 @@ export class MetadataManager {
 
 	getAttachmentCache(): Map<string, AttachmentMetadata> {
 		return this.attachmentCache;
-	}
-
-	/**
-	 * Migrate existing baseContent from settings to IndexedDB
-	 */
-	async migrateBaseContentToIndexedDB(): Promise<void> {
-		if (!this.migrationPromise) {
-			this.migrationPromise = this.runMigration();
-		}
-		return this.migrationPromise;
-	}
-
-	private async runMigration(): Promise<void> {
-		try {
-			await this.baseContentStore.init();
-
-			// Check if there's baseContent in the old format
-			if (this.settings.metadataCache) {
-				let hasBaseContent = false;
-				for (const metadata of Object.values(this.settings.metadataCache)) {
-					if (metadata.baseContent) {
-						hasBaseContent = true;
-						break;
-					}
-				}
-
-				if (hasBaseContent) {
-					const count = await this.baseContentStore.migrateFromSettings(
-						this.settings.metadataCache,
-					);
-
-					// Remove baseContent from settings to save space
-					if (count > 0) {
-						for (const metadata of Object.values(this.settings.metadataCache)) {
-							delete metadata.baseContent;
-						}
-						await this.saveSettings();
-					}
-				}
-			}
-
-			// Run cleanup to remove old entries (older than 90 days)
-			await this.baseContentStore.cleanup();
-		} catch (error) {
-			console.error("Failed to migrate baseContent:", error);
-		}
 	}
 
 	async persistCache(): Promise<void> {
