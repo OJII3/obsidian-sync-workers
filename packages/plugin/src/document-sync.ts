@@ -365,6 +365,7 @@ export class DocumentSync {
 					current_content: remoteContent,
 					current_rev: doc._rev,
 					conflicts: mergeResult.conflicts,
+					reason: mergeResult.error,
 				});
 				return resolution !== ConflictResolution.Cancel;
 			}
