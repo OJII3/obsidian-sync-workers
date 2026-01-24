@@ -5,7 +5,7 @@ import { ConflictResolution } from "./conflict-modal";
 import type { ConflictResolver } from "./conflict-resolver";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
-import { docIdToPath, pathToDocId, updateFileContent } from "./sync-utils";
+import { docIdToPath, getFileMtime, pathToDocId, updateFileContent } from "./sync-utils";
 import type {
 	BulkDocsResponse,
 	ChangesResponse,
@@ -114,28 +114,43 @@ export class DocumentSync {
 		const docsToUpdate: DocumentInput[] = [];
 		const currentFilePaths = new Set<string>();
 		const metadataCache = this.metadataManager.getMetadataCache();
+		// Track file mtime at push time to detect interim edits when pulling merged content
+		const pushTimeMtimes = new Map<string, number>();
 
 		// Check for modified files
+		// Use in-memory stat for initial check to avoid disk I/O for unchanged files
 		for (const file of files) {
 			currentFilePaths.add(file.path);
 			const metadata = metadataCache.get(file.path);
-			const fileModTime = file.stat.mtime;
 
-			// Check if file has been modified since last sync
-			if (!metadata || fileModTime > metadata.lastModified) {
-				const content = await this.vault.read(file);
-				const docId = pathToDocId(file.path);
-
-				// Get baseContent from IndexedDB for 3-way merge
-				const baseContent = await this.baseContentStore.get(file.path);
-
-				docsToUpdate.push({
-					_id: docId,
-					_rev: metadata?.rev,
-					content,
-					_base_content: baseContent,
-				});
+			// Quick check using in-memory mtime to avoid disk I/O for unchanged files
+			if (metadata && file.stat.mtime <= metadata.lastModified) {
+				continue;
 			}
+
+			// File appears modified - get accurate mtime from disk for the push
+			const fileModTime = await getFileMtime(this.vault, file.path);
+
+			// Double-check with accurate disk mtime (in-memory might be slightly off)
+			if (metadata && fileModTime <= metadata.lastModified) {
+				continue;
+			}
+
+			const content = await this.vault.read(file);
+			const docId = pathToDocId(file.path);
+
+			// Get baseContent from IndexedDB for 3-way merge
+			const baseContent = await this.baseContentStore.get(file.path);
+
+			// Store mtime at push time to verify file hasn't changed when pulling merged content
+			pushTimeMtimes.set(docId, fileModTime);
+
+			docsToUpdate.push({
+				_id: docId,
+				_rev: metadata?.rev,
+				content,
+				_base_content: baseContent,
+			});
 		}
 
 		// Check for deleted files
@@ -192,24 +207,26 @@ export class DocumentSync {
 				const file = this.vault.getAbstractFileByPath(path);
 
 				if (result.merged) {
-					// Automatic merge was performed
-					// Pull the merged content first to avoid race conditions
+					// Automatic merge was performed on the server
+					// Pull the merged content, but only skip conflict check if file hasn't changed since push
+					const expectedMtime = pushTimeMtimes.get(result.id);
 					try {
-						await this.pullDocument(result.id);
+						await this.pullDocument(result.id, expectedMtime);
 						syncStats.pushed++;
 					} catch (error) {
 						console.error(`Failed to pull merged content for ${path}:`, error);
 						syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
-					// Normal update - update metadata
+					// Normal update - update metadata with actual file mtime
 					const content = await this.vault.read(file);
+					const actualMtime = await getFileMtime(this.vault, path);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
-						lastModified: file.stat.mtime,
+						lastModified: actualMtime,
 					});
-					// Store baseContent in IndexedDB
+					// Store baseContent in IndexedDB (the content we just pushed is now the base)
 					await this.baseContentStore.set(path, content);
 					syncStats.pushed++;
 				} else {
@@ -230,7 +247,14 @@ export class DocumentSync {
 		await this.metadataManager.persistCache();
 	}
 
-	private async pullDocument(docId: string): Promise<boolean> {
+	/**
+	 * Pull a document from the server and update the local file.
+	 * @param docId - The document ID to pull
+	 * @param expectedMtime - If provided, only skip conflict check if current file mtime <= expectedMtime
+	 *                        (used to safely pull merged content without overwriting interim edits)
+	 * @returns true if successful or conflict resolved, false if cancelled
+	 */
+	private async pullDocument(docId: string, expectedMtime?: number): Promise<boolean> {
 		const url = `${this.settings.serverUrl}/api/docs/${encodeURIComponent(
 			docId,
 		)}?vault_id=${this.settings.vaultId}`;
@@ -257,12 +281,21 @@ export class DocumentSync {
 
 		if (file instanceof TFile) {
 			const localMeta = metadataCache.get(path);
-			// Check if we need to update
+			// Check if we need to update (skip if rev already matches)
 			if (localMeta && localMeta.rev === doc._rev) {
 				return true;
 			}
 
-			if (this.isLocalModified(file, localMeta)) {
+			// Get current file mtime from disk for accurate comparison
+			const currentMtime = await getFileMtime(this.vault, path);
+
+			// Determine if we should check for conflicts
+			// If expectedMtime is provided, only skip conflict check if file hasn't changed since push
+			const shouldSkipConflictCheck = expectedMtime !== undefined && currentMtime <= expectedMtime;
+
+			// Check for local modifications using fresh disk mtime (not stale file.stat.mtime)
+			const isModified = !localMeta || currentMtime > localMeta.lastModified;
+			if (!shouldSkipConflictCheck && isModified) {
 				const resolution = await this.conflictResolver.handleConflict({
 					id: doc._id,
 					current_content: content,
@@ -297,11 +330,14 @@ export class DocumentSync {
 			await this.vault.create(path, content);
 		}
 
-		// Update metadata cache (without baseContent - it's now in IndexedDB)
+		// Get the actual file mtime after writing (critical for correct change detection)
+		const actualMtime = await getFileMtime(this.vault, path);
+
+		// Update metadata cache with actual mtime (without baseContent - it's now in IndexedDB)
 		metadataCache.set(path, {
 			path,
 			rev: doc._rev,
-			lastModified: Date.now(),
+			lastModified: actualMtime,
 		});
 
 		// Store baseContent in IndexedDB for future 3-way merges
