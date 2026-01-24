@@ -62,14 +62,19 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 						});
 						continue;
 					}
-					// Base revision not found (possibly cleaned up) or content missing
+					// Determine specific error reason
+					let reason: string;
+					if (baseContent === null) {
+						reason = "Base revision not found - full sync required";
+					} else if (!doc.content || !existing.content) {
+						reason = "Content missing for merge operation";
+					} else {
+						reason = "Document update conflict";
+					}
 					results.push({
 						id: doc._id,
 						error: "conflict",
-						reason:
-							baseContent === null
-								? "Base revision not found - full sync required"
-								: "Document update conflict",
+						reason,
 						current_content: existing.content,
 						current_rev: existing.rev,
 					});

@@ -442,7 +442,7 @@ sequenceDiagram
 
     B->>B: 競合モーダルを表示
     alt ユーザーがローカル版を選択
-        B->>S: PUT /docs/test (_rev=2-yyy, content="Hello from B", _force=true)
+        B->>S: PUT /docs/test (_rev=2-yyy, content="Hello from B")
         S-->>B: { ok: true, rev: 3-zzz }
     else ユーザーがリモート版を選択
         B->>B: ローカルを "Hello from A" に更新
@@ -480,7 +480,7 @@ sequenceDiagram
         S->>S: 3-way merge を試行
         S-->>B: マージ結果（成功 or 競合）
     else rev=1-xxx が cleanup で削除済み
-        S-->>B: { error: "conflict", reason: "base_not_found", current_content: ..., current_rev: 4-www }
+        S-->>B: { error: "conflict", reason: "Base revision not found - full sync required", current_content: ..., current_rev: 4-www }
         B->>B: フルリセット or 手動マージが必要
     end
 ```
@@ -510,14 +510,14 @@ sequenceDiagram
 #### 実装タスク
 
 1. **サーバー側**
-   - [ ] `revisions`テーブルから指定revのコンテンツを取得するクエリ追加
-   - [ ] 競合検出時に自動でbaseContentを取得してマージ
-   - [ ] baseが見つからない場合のエラーハンドリング
+   - [x] `revisions`テーブルから指定revのコンテンツを取得するクエリ追加
+   - [x] 競合検出時に自動でbaseContentを取得してマージ
+   - [x] baseが見つからない場合のエラーハンドリング
 
 2. **クライアント側**
-   - [ ] `_base_content`の送信を削除
-   - [ ] IndexedDB依存を削除
-   - [ ] `base-content-store.ts`を削除
+   - [x] `_base_content`の送信を削除
+   - [x] IndexedDB依存を削除
+   - [x] `base-content-store.ts`を削除
 
 ## アタッチメント同期機能の詳細
 
