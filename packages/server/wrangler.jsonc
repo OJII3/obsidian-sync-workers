@@ -19,5 +19,8 @@
   ],
   "vars": {
     // Optional: CORS_ORIGIN (e.g. "https://app.example.com")
+  },
+  "observability": {
+    "enabled": true
   }
 }
