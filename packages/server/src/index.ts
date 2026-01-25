@@ -1,15 +1,9 @@
 import { env as cfEnv } from "cloudflare:workers";
 import { Elysia } from "elysia";
-import { adminCleanupHandler, adminStatsHandler } from "./routes/admin";
-import {
-	attachmentChangesHandler,
-	attachmentContentHandler,
-	attachmentMetaHandler,
-	deleteAttachmentHandler,
-	uploadAttachmentHandler,
-} from "./routes/attachments";
-import { changesHandler, continuousChangesHandler } from "./routes/changes";
-import { bulkDocsHandler, deleteDocHandler, getDocHandler, putDocHandler } from "./routes/docs";
+import { adminRoutes } from "./routes/admin";
+import { attachmentsRoutes } from "./routes/attachments";
+import { changesRoutes } from "./routes/changes";
+import { bulkDocsRoute, docsRoutes } from "./routes/docs";
 import { healthHandler } from "./routes/health";
 import { statusHandler } from "./routes/status";
 import type { Env } from "./types";
@@ -51,57 +45,21 @@ const app = new Elysia({ aot: false })
 		}
 	})
 	// Handle OPTIONS requests for CORS preflight
-	.options("/*", () => {
-		return new Response(null, { status: 204 });
-	});
-
-app.get("/", healthHandler());
-
-// Lightweight status endpoint for efficient polling
-app.get("/api/status", statusHandler(env));
-
-app.group("/api/changes", (app) =>
-	app.get("/", changesHandler(env)).get("/continuous", continuousChangesHandler()),
-);
-
-app.group("/api/docs", (app) =>
-	app
-		// Get a single document
-		.get("/:id", getDocHandler(env))
-		// Create or update a document
-		.put("/:id", putDocHandler(env))
-		// Delete a document
-		.delete("/:id", deleteDocHandler(env))
-		// Bulk document operations
-		.post("/bulk_docs", bulkDocsHandler(env)),
-);
-
-// Alternative bulk docs path
-app.post("/api/_bulk_docs", bulkDocsHandler(env));
-
-app.group("/api/attachments", (app) =>
-	app
-		// Get attachment changes
-		.get("/changes", attachmentChangesHandler(env))
-		// Get attachment metadata by ID
-		.get("/:id", attachmentMetaHandler(env))
-		// Download attachment content
-		.get("/:id/content", attachmentContentHandler(env))
-		// Upload attachment (path is the original file path for reference)
-		.put("/:path", uploadAttachmentHandler(env))
-		// Delete attachment by ID (content-addressable ID format: vaultId:hash.ext)
-		.delete("/:id", deleteAttachmentHandler(env)),
-);
-
-app.group("/api/admin", (app) =>
-	app
-		// Get database statistics
-		.get("/stats", adminStatsHandler(env))
-		// Cleanup old data
-		.post("/cleanup", adminCleanupHandler(env)),
-);
-
-app
+	.options("/*", () => new Response(null, { status: 204 }))
+	// Health check
+	.get("/", healthHandler())
+	// Lightweight status endpoint for efficient polling
+	.get("/api/status", statusHandler(env))
+	// API routes using plugins
+	.group("/api", (app) =>
+		app
+			.use(changesRoutes(env))
+			.use(docsRoutes(env))
+			.use(attachmentsRoutes(env))
+			.use(adminRoutes(env)),
+	)
+	// Alternative bulk docs path
+	.use(bulkDocsRoute(env))
 	// 404 handler
 	.onError(({ code, error, set }) => {
 		if (code === "NOT_FOUND") {

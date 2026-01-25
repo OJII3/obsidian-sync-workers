@@ -1,3 +1,4 @@
+import { Elysia } from "elysia";
 import { Database } from "../db/queries";
 import type { BulkDocsRequest, DocumentInput, Env } from "../types";
 import { threeWayMerge } from "../utils/merge";
@@ -113,135 +114,129 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 	return results;
 }
 
-export function getDocHandler(env: Env) {
-	return async (context: any) => {
-		const { params, query, set } = context;
-		const id = params.id;
-		const vaultId = query.vault_id || "default";
+export const docsRoutes = (env: Env) =>
+	new Elysia({ prefix: "/docs" })
+		.get("/:id", async ({ params, query, set }) => {
+			const id = params.id;
+			const vaultId = query.vault_id || "default";
 
-		const db = new Database(env.DB);
-		const doc = await db.getDocument(id, vaultId);
+			const db = new Database(env.DB);
+			const doc = await db.getDocument(id, vaultId);
 
-		if (!doc) {
-			set.status = 404;
-			return {
-				error: "not_found",
-				reason: "missing",
-			};
-		}
-
-		// Check if document is deleted
-		if (doc.deleted === 1) {
-			set.status = 404;
-			return {
-				error: "not_found",
-				reason: "deleted",
-				deleted_at: doc.updated_at,
-				last_rev: doc.rev,
-			};
-		}
-
-		// Return in CouchDB-like format
-		return {
-			_id: doc.id,
-			_rev: doc.rev,
-			content: doc.content,
-			_deleted: false,
-		};
-	};
-}
-
-export function putDocHandler(env: Env) {
-	return async (context: any) => {
-		const { params, query, body, set } = context;
-		const id = params.id;
-		const vaultId = query.vault_id || "default";
-		const input = body as DocumentInput;
-
-		const db = new Database(env.DB);
-		const existing = await db.getDocument(id, vaultId);
-
-		// Generate new revision
-		let newRev: string;
-
-		if (existing) {
-			// Check for conflicts
-			if (input._rev && input._rev !== existing.rev) {
-				set.status = 409;
+			if (!doc) {
+				set.status = 404;
 				return {
-					error: "Document update conflict",
-					reason: "Revision mismatch",
-					current_rev: existing.rev,
-					provided_rev: input._rev,
+					error: "not_found",
+					reason: "missing",
 				};
 			}
 
-			newRev = generateRevision(existing.rev);
-		} else {
-			newRev = generateRevision();
-		}
+			// Check if document is deleted
+			if (doc.deleted === 1) {
+				set.status = 404;
+				return {
+					error: "not_found",
+					reason: "deleted",
+					deleted_at: doc.updated_at,
+					last_rev: doc.rev,
+				};
+			}
 
-		// Upsert document
-		await db.upsertDocument({
-			id,
-			vaultId,
-			content: input.content || null,
-			rev: newRev,
-			deleted: input._deleted ? 1 : 0,
+			// Return in CouchDB-like format
+			return {
+				_id: doc.id,
+				_rev: doc.rev,
+				content: doc.content,
+				_deleted: false,
+			};
+		})
+		.put("/:id", async ({ params, query, body, set }) => {
+			const id = params.id;
+			const vaultId = query.vault_id || "default";
+			const input = body as DocumentInput;
+
+			const db = new Database(env.DB);
+			const existing = await db.getDocument(id, vaultId);
+
+			// Generate new revision
+			let newRev: string;
+
+			if (existing) {
+				// Check for conflicts
+				if (input._rev && input._rev !== existing.rev) {
+					set.status = 409;
+					return {
+						error: "Document update conflict",
+						reason: "Revision mismatch",
+						current_rev: existing.rev,
+						provided_rev: input._rev,
+					};
+				}
+
+				newRev = generateRevision(existing.rev);
+			} else {
+				newRev = generateRevision();
+			}
+
+			// Upsert document
+			await db.upsertDocument({
+				id,
+				vaultId,
+				content: input.content || null,
+				rev: newRev,
+				deleted: input._deleted ? 1 : 0,
+			});
+
+			return {
+				ok: true,
+				id,
+				rev: newRev,
+			};
+		})
+		.delete("/:id", async ({ params, query, set }) => {
+			const id = params.id;
+			const vaultId = query.vault_id || "default";
+			const rev = query.rev;
+
+			if (!rev) {
+				set.status = 400;
+				return { error: "Revision required for deletion" };
+			}
+
+			const db = new Database(env.DB);
+			const existing = await db.getDocument(id, vaultId);
+
+			if (!existing) {
+				set.status = 404;
+				return { error: "Document not found" };
+			}
+
+			if (existing.rev !== rev) {
+				set.status = 409;
+				return {
+					error: "Document deletion conflict",
+					reason: "Revision mismatch",
+				};
+			}
+
+			const newRev = generateRevision(existing.rev);
+			await db.deleteDocument(id, vaultId, newRev);
+
+			return {
+				ok: true,
+				id,
+				rev: newRev,
+			};
+		})
+		.post("/bulk_docs", async ({ query, body }) => {
+			const vaultId = query.vault_id || "default";
+			const request = body as BulkDocsRequest;
+			return handleBulkDocs(request, vaultId, env);
 		});
 
-		return {
-			ok: true,
-			id,
-			rev: newRev,
-		};
-	};
-}
-
-export function deleteDocHandler(env: Env) {
-	return async (context: any) => {
-		const { params, query, set } = context;
-		const id = params.id;
-		const vaultId = query.vault_id || "default";
-		const rev = query.rev;
-
-		if (!rev) {
-			set.status = 400;
-			return { error: "Revision required for deletion" };
-		}
-
-		const db = new Database(env.DB);
-		const existing = await db.getDocument(id, vaultId);
-
-		if (!existing) {
-			set.status = 404;
-			return { error: "Document not found" };
-		}
-
-		if (existing.rev !== rev) {
-			set.status = 409;
-			return {
-				error: "Document deletion conflict",
-				reason: "Revision mismatch",
-			};
-		}
-
-		const newRev = generateRevision(existing.rev);
-		await db.deleteDocument(id, vaultId, newRev);
-
-		return {
-			ok: true,
-			id,
-			rev: newRev,
-		};
-	};
-}
-
-export function bulkDocsHandler(env: Env) {
-	return async (context: any) => {
-		const { query, body } = context;
+export const bulkDocsRoute = (env: Env) =>
+	new Elysia().post("/api/_bulk_docs", async ({ query, body }) => {
 		const vaultId = query.vault_id || "default";
 		const request = body as BulkDocsRequest;
 		return handleBulkDocs(request, vaultId, env);
-	};
-}
+	});
