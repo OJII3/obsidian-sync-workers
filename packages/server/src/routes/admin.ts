@@ -1,52 +1,49 @@
+import { Elysia } from "elysia";
 import { Database } from "../db/queries";
 import type { Env } from "../types";
 
-export function adminStatsHandler(env: Env) {
-	return async () => {
-		const db = new Database(env.DB);
-		const stats = await db.getCleanupStats();
-		return {
-			ok: true,
-			stats,
-			timestamp: Date.now(),
-		};
-	};
-}
-
-export function adminCleanupHandler(env: Env) {
-	return async (context: any) => {
-		const { query } = context;
-		const maxAgeDays = parseInt(query.max_age_days || "90", 10);
-
-		if (Number.isNaN(maxAgeDays) || maxAgeDays < 1 || maxAgeDays > 365) {
+export const adminRoutes = (env: Env) =>
+	new Elysia({ prefix: "/admin" })
+		.get("/stats", async () => {
+			const db = new Database(env.DB);
+			const stats = await db.getCleanupStats();
 			return {
-				error: "Invalid max_age_days parameter (1-365)",
-				status: 400,
+				ok: true,
+				stats,
+				timestamp: Date.now(),
 			};
-		}
+		})
+		.post("/cleanup", async ({ query }) => {
+			const maxAgeDays = Number.parseInt(query.max_age_days || "90", 10);
 
-		const db = new Database(env.DB);
+			if (Number.isNaN(maxAgeDays) || maxAgeDays < 1 || maxAgeDays > 365) {
+				return {
+					error: "Invalid max_age_days parameter (1-365)",
+					status: 400,
+				};
+			}
 
-		// Get stats before cleanup
-		const statsBefore = await db.getCleanupStats();
+			const db = new Database(env.DB);
 
-		// Perform cleanup
-		const result = await db.performFullCleanup(maxAgeDays);
+			// Get stats before cleanup
+			const statsBefore = await db.getCleanupStats();
 
-		// Get stats after cleanup
-		const statsAfter = await db.getCleanupStats();
+			// Perform cleanup
+			const result = await db.performFullCleanup(maxAgeDays);
 
-		return {
-			ok: true,
-			cleanup: {
-				maxAgeDays,
-				deletedRevisions: result.deletedRevisions,
-				deletedChanges: result.deletedChanges,
-				deletedAttachmentChanges: result.deletedAttachmentChanges,
-			},
-			statsBefore,
-			statsAfter,
-			timestamp: Date.now(),
-		};
-	};
-}
+			// Get stats after cleanup
+			const statsAfter = await db.getCleanupStats();
+
+			return {
+				ok: true,
+				cleanup: {
+					maxAgeDays,
+					deletedRevisions: result.deletedRevisions,
+					deletedChanges: result.deletedChanges,
+					deletedAttachmentChanges: result.deletedAttachmentChanges,
+				},
+				statsBefore,
+				statsAfter,
+				timestamp: Date.now(),
+			};
+		});
