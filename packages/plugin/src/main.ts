@@ -87,7 +87,7 @@ export default class SyncWorkersPlugin extends Plugin {
 		this.registerObsidianProtocolHandler("setup-sync-workers", async (params) => {
 			if (!params.data) return;
 			const uri = `obsidian://setup-sync-workers?data=${params.data}`;
-			this.openImportModalWithURI(uri);
+			await this.openImportModalWithURI(uri);
 		});
 
 		// Start auto sync if enabled
@@ -207,6 +207,13 @@ export default class SyncWorkersPlugin extends Plugin {
 		this.settings.serverUrl = data.serverUrl;
 		this.settings.apiKey = data.apiKey;
 		this.settings.vaultId = data.vaultId;
+
+		// Reset sync state to avoid stale cache from a previously synced vault
+		this.settings.lastSeq = 0;
+		this.settings.lastAttachmentSeq = 0;
+		this.settings.lastSync = 0;
+		this.settings.metadataCache = {};
+		this.settings.attachmentCache = {};
 		await this.saveSettings();
 
 		// Test connection and trigger initial sync

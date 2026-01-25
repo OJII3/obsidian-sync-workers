@@ -23,7 +23,7 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
 	return crypto.subtle.deriveKey(
 		{
 			name: "PBKDF2",
-			salt: salt.buffer as ArrayBuffer,
+			salt: salt.buffer.slice(salt.byteOffset, salt.byteOffset + salt.byteLength) as ArrayBuffer,
 			iterations: PBKDF2_ITERATIONS,
 			hash: "SHA-256",
 		},
@@ -68,11 +68,18 @@ export async function encryptSetupData(data: SetupData, passphrase: string): Pro
 	packed.set(iv, 1 + SALT_LENGTH);
 	packed.set(new Uint8Array(ciphertext), 1 + SALT_LENGTH + IV_LENGTH);
 
-	return SETUP_URI_PREFIX + encodeBase64(packed.buffer);
+	return SETUP_URI_PREFIX + encodeURIComponent(encodeBase64(packed.buffer));
 }
 
 export async function decryptSetupURI(uri: string, passphrase: string): Promise<SetupData> {
-	const dataStr = uri.startsWith(SETUP_URI_PREFIX) ? uri.slice(SETUP_URI_PREFIX.length) : uri;
+	const rawDataStr = uri.startsWith(SETUP_URI_PREFIX) ? uri.slice(SETUP_URI_PREFIX.length) : uri;
+
+	let dataStr: string;
+	try {
+		dataStr = decodeURIComponent(rawDataStr);
+	} catch {
+		dataStr = rawDataStr;
+	}
 
 	const packed = decodeBase64(dataStr);
 
