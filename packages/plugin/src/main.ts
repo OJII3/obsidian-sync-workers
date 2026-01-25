@@ -1,5 +1,6 @@
 import { type EventRef, Notice, Plugin, TFile } from "obsidian";
 import { SyncSettingsTab } from "./settings";
+import { CopySetupURIModal, ImportSetupURIModal } from "./setup-uri-modal";
 import { SyncService, type SyncStatus } from "./sync-service";
 import { DEFAULT_SETTINGS, type SyncSettings } from "./types";
 
@@ -59,6 +60,34 @@ export default class SyncWorkersPlugin extends Plugin {
 				}
 				this.updateStatusBar({ status: "idle" });
 			},
+		});
+
+		this.addCommand({
+			id: "copy-setup-uri",
+			name: "Copy setup URI",
+			callback: () => {
+				new CopySetupURIModal(
+					this.app,
+					this.settings.serverUrl,
+					this.settings.apiKey,
+					this.settings.vaultId,
+				).open();
+			},
+		});
+
+		this.addCommand({
+			id: "import-setup-uri",
+			name: "Import setup URI",
+			callback: () => {
+				this.openImportModal();
+			},
+		});
+
+		// Register protocol handler for obsidian://setup-sync-workers?data=...
+		this.registerObsidianProtocolHandler("setup-sync-workers", async (params) => {
+			if (!params.data) return;
+			const uri = `obsidian://setup-sync-workers?data=${params.data}`;
+			await this.openImportModalWithURI(uri);
 		});
 
 		// Start auto sync if enabled
@@ -154,6 +183,48 @@ export default class SyncWorkersPlugin extends Plugin {
 			this.syncDebounceId = null;
 			await this.syncService.performSync();
 		}, delayMs);
+	}
+
+	async openImportModal() {
+		const modal = new ImportSetupURIModal(this.app);
+		modal.open();
+		const data = await modal.waitForResult();
+		if (data) {
+			await this.applySetupData(data);
+		}
+	}
+
+	async openImportModalWithURI(uri: string) {
+		const modal = new ImportSetupURIModal(this.app, uri);
+		modal.open();
+		const data = await modal.waitForResult();
+		if (data) {
+			await this.applySetupData(data);
+		}
+	}
+
+	private async applySetupData(data: { serverUrl: string; apiKey: string; vaultId: string }) {
+		this.settings.serverUrl = data.serverUrl;
+		this.settings.apiKey = data.apiKey;
+		this.settings.vaultId = data.vaultId;
+
+		// Reset sync state to avoid stale cache from a previously synced vault
+		this.settings.lastSeq = 0;
+		this.settings.lastAttachmentSeq = 0;
+		this.settings.lastSync = 0;
+		this.settings.metadataCache = {};
+		this.settings.attachmentCache = {};
+		await this.saveSettings();
+
+		// Test connection and trigger initial sync
+		new Notice("Testing connection...");
+		const ok = await this.syncService.testConnection();
+		if (ok) {
+			new Notice("Connected. Starting initial sync...");
+			await this.syncService.performSync();
+		} else {
+			new Notice("Connection failed. Check settings.");
+		}
 	}
 
 	private lastStatus: SyncStatus = { status: "idle" };
