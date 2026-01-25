@@ -1,5 +1,6 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type SyncWorkersPlugin from "./main";
+import { CopySetupURIModal } from "./setup-uri-modal";
 
 export class SyncSettingsTab extends PluginSettingTab {
 	plugin: SyncWorkersPlugin;
@@ -213,6 +214,32 @@ export class SyncSettingsTab extends PluginSettingTab {
 						await this.plugin.syncService.performSync();
 						button.setDisabled(false);
 					}),
+			);
+
+		// Setup URI section
+		new Setting(containerEl).setName("Setup URI").setHeading();
+
+		new Setting(containerEl)
+			.setName("Copy setup URI")
+			.setDesc("Generate an encrypted URI to set up another device")
+			.addButton((button) =>
+				button.setButtonText("Copy").onClick(() => {
+					new CopySetupURIModal(
+						this.app,
+						this.plugin.settings.serverUrl,
+						this.plugin.settings.apiKey,
+						this.plugin.settings.vaultId,
+					).open();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Import setup URI")
+			.setDesc("Import settings from another device using a setup URI")
+			.addButton((button) =>
+				button.setButtonText("Import").onClick(() => {
+					this.plugin.openImportModal();
+				}),
 			);
 
 		// Status information
