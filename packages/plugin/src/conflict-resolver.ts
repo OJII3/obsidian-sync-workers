@@ -1,6 +1,7 @@
 import { type App, TFile, type Vault } from "obsidian";
 import { buildAuthHeaders } from "./auth";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
+import { FullSyncRequiredModal, FullSyncResolution } from "./full-sync-modal";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
 import { docIdToPath, getFileMtime, updateFileContent } from "./sync-utils";
@@ -12,6 +13,7 @@ export class ConflictResolver {
 	private settings: SyncSettings;
 	private metadataManager: MetadataManager;
 	private retryOptions: RetryOptions;
+	private onFullResetRequested?: () => Promise<void>;
 
 	constructor(
 		app: App,
@@ -25,6 +27,10 @@ export class ConflictResolver {
 		this.settings = settings;
 		this.metadataManager = metadataManager;
 		this.retryOptions = retryOptions;
+	}
+
+	setFullResetCallback(callback: () => Promise<void>): void {
+		this.onFullResetRequested = callback;
 	}
 
 	async handleConflict(result: BulkDocsResponse): Promise<ConflictResolution> {
@@ -42,6 +48,25 @@ export class ConflictResolver {
 		if (!(file instanceof TFile)) {
 			console.error(`Cannot resolve conflict: file not found ${path}`);
 			return ConflictResolution.Cancel;
+		}
+
+		// Check if full sync is required (base revision not found)
+		if (result.requires_full_sync) {
+			const fullSyncModal = new FullSyncRequiredModal(this.app, path, result.reason || "unknown");
+			fullSyncModal.open();
+			const fullSyncResolution = await fullSyncModal.waitForResult();
+
+			if (fullSyncResolution === FullSyncResolution.FullReset) {
+				// Trigger full reset callback and cancel current sync
+				if (this.onFullResetRequested) {
+					await this.onFullResetRequested();
+				}
+				return ConflictResolution.Cancel;
+			}
+			if (fullSyncResolution === FullSyncResolution.Cancel) {
+				return ConflictResolution.Cancel;
+			}
+			// ManualResolve - fall through to normal conflict resolution
 		}
 
 		const localContent = await this.vault.read(file);

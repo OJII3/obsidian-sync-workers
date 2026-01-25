@@ -1,4 +1,4 @@
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type SyncWorkersPlugin from "./main";
 import { CopySetupURIModal } from "./setup-uri-modal";
 
@@ -242,6 +242,73 @@ export class SyncSettingsTab extends PluginSettingTab {
 				}),
 			);
 
+		// Maintenance section
+		new Setting(containerEl).setName("Maintenance").setHeading();
+
+		new Setting(containerEl)
+			.setName("Full reset")
+			.setDesc("Clear local sync cache and re-sync all files from server. Use if sync is broken.")
+			.addButton((button) =>
+				button
+					.setButtonText("Full reset")
+					.setWarning()
+					.onClick(async () => {
+						// Confirmation dialog
+						const confirmed = await this.confirmFullReset();
+						if (!confirmed) {
+							return;
+						}
+
+						button.setDisabled(true);
+						button.setButtonText("Resetting...");
+
+						try {
+							await this.plugin.syncService.performFullReset();
+							new Notice("Full reset complete. Syncing...");
+							// Trigger a sync after reset
+							await this.plugin.syncService.performSync();
+							new Notice("Sync complete.");
+						} catch (error) {
+							const message = error instanceof Error ? error.message : "Unknown error";
+							new Notice(`Full reset failed: ${message}`);
+						} finally {
+							button.setDisabled(false);
+							button.setButtonText("Full reset");
+						}
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Clear metadata cache")
+			.setDesc(
+				"Clear local sync metadata without re-syncing. Next sync will treat all files as new.",
+			)
+			.addButton((button) =>
+				button.setButtonText("Clear cache").onClick(async () => {
+					// Confirmation dialog
+					const confirmed = await this.confirmClearCache();
+					if (!confirmed) {
+						return;
+					}
+
+					button.setDisabled(true);
+					button.setButtonText("Clearing...");
+
+					try {
+						// Reuse the sync service's full reset logic to ensure both
+						// in-memory and persisted metadata caches are cleared.
+						await this.plugin.syncService.performFullReset();
+						new Notice("Metadata cache cleared. Next sync will treat all files as new.");
+					} catch (error) {
+						const message = error instanceof Error ? error.message : "Unknown error";
+						new Notice(`Failed to clear metadata cache: ${message}`);
+					} finally {
+						button.setDisabled(false);
+						button.setButtonText("Clear cache");
+					}
+				}),
+			);
+
 		// Status information
 		new Setting(containerEl).setName("Status").setHeading();
 
@@ -256,5 +323,82 @@ export class SyncSettingsTab extends PluginSettingTab {
 		statusDiv.createEl("p", {
 			text: `Last sequence: ${this.plugin.settings.lastSeq}`,
 		});
+	}
+
+	private async confirmFullReset(): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new ConfirmModal(
+				this.app,
+				"Full reset",
+				"This will clear all local sync metadata and re-sync from the server. Your local files will be preserved and compared with server versions. Continue?",
+				() => resolve(true),
+				() => resolve(false),
+			);
+			modal.open();
+		});
+	}
+
+	private async confirmClearCache(): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new ConfirmModal(
+				this.app,
+				"Clear cache",
+				"This will clear all local sync metadata. The next sync will treat all files as new, which may result in conflicts. Continue?",
+				() => resolve(true),
+				() => resolve(false),
+			);
+			modal.open();
+		});
+	}
+}
+
+class ConfirmModal extends Modal {
+	private title: string;
+	private message: string;
+	private onConfirm: () => void;
+	private onCancel: () => void;
+
+	constructor(
+		app: App,
+		title: string,
+		message: string,
+		onConfirm: () => void,
+		onCancel: () => void,
+	) {
+		super(app);
+		this.title = title;
+		this.message = message;
+		this.onConfirm = onConfirm;
+		this.onCancel = onCancel;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl("h2", { text: this.title });
+		contentEl.createEl("p", { text: this.message });
+
+		new Setting(contentEl)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Confirm")
+					.setWarning()
+					.onClick(() => {
+						this.close();
+						this.onConfirm();
+					}),
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Cancel").onClick(() => {
+					this.close();
+					this.onCancel();
+				}),
+			);
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }

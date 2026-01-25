@@ -31,6 +31,7 @@ export class SyncService {
 	private documentSync: DocumentSync;
 	private attachmentSync: AttachmentSync;
 	private onStatusChange: (status: SyncStatus) => void;
+	private saveSettings: () => Promise<void>;
 	private syncStats: SyncStats = {
 		pulled: 0,
 		pushed: 0,
@@ -49,6 +50,7 @@ export class SyncService {
 	) {
 		this.vault = vault;
 		this.settings = settings;
+		this.saveSettings = saveSettings;
 		this.onStatusChange = onStatusChange;
 
 		// Configure retry options with exponential backoff
@@ -69,6 +71,9 @@ export class SyncService {
 			this.metadataManager,
 			this.retryOptions,
 		);
+
+		// Set up full reset callback for conflict resolver
+		this.conflictResolver.setFullResetCallback(() => this.performFullReset());
 
 		this.documentSync = new DocumentSync(
 			app,
@@ -333,5 +338,39 @@ export class SyncService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Perform a full reset: clear all local sync metadata and re-sync from server.
+	 * This is useful when:
+	 * - Base revision is not found (long period of offline use)
+	 * - Changes feed gap detected (server cleanup occurred)
+	 * - Manual reset requested by user
+	 *
+	 * Local files are preserved and compared with server versions during next sync.
+	 */
+	async performFullReset(): Promise<void> {
+		console.log("Performing full reset: clearing metadata cache and resetting sequence numbers");
+
+		// Clear in-memory caches in MetadataManager first
+		this.metadataManager.clearAll();
+
+		// Clear persisted metadata cache
+		this.settings.metadataCache = {};
+
+		// Clear persisted attachment cache
+		this.settings.attachmentCache = {};
+
+		// Reset sequence numbers to 0 (will pull all changes on next sync)
+		this.settings.lastSeq = 0;
+		this.settings.lastAttachmentSeq = 0;
+
+		// Persist the cleared state
+		await this.saveSettings();
+
+		console.log("Full reset complete. Next sync will treat all files as new.");
+
+		// Note: We don't trigger sync here - let the caller decide when to sync
+		// This avoids potential recursion issues if called from within a sync
 	}
 }

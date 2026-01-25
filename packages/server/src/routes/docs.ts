@@ -64,12 +64,14 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 					}
 					// Determine specific error reason
 					let reason: string;
+					let requiresFullSync = false;
 					if (baseContent === null) {
-						reason = "Base revision not found - full sync required";
+						reason = "base_revision_not_found";
+						requiresFullSync = true;
 					} else if (!doc.content || !existing.content) {
-						reason = "Content missing for merge operation";
+						reason = "content_missing";
 					} else {
-						reason = "Document update conflict";
+						reason = "conflict";
 					}
 					results.push({
 						id: doc._id,
@@ -77,6 +79,7 @@ async function handleBulkDocs(request: BulkDocsRequest, vaultId: string, env: En
 						reason,
 						current_content: existing.content,
 						current_rev: existing.rev,
+						requires_full_sync: requiresFullSync,
 					});
 					continue;
 				}
@@ -121,7 +124,21 @@ export function getDocHandler(env: Env) {
 
 		if (!doc) {
 			set.status = 404;
-			return { error: "Document not found" };
+			return {
+				error: "not_found",
+				reason: "missing",
+			};
+		}
+
+		// Check if document is deleted
+		if (doc.deleted === 1) {
+			set.status = 404;
+			return {
+				error: "not_found",
+				reason: "deleted",
+				deleted_at: doc.updated_at,
+				last_rev: doc.rev,
+			};
 		}
 
 		// Return in CouchDB-like format
@@ -129,7 +146,7 @@ export function getDocHandler(env: Env) {
 			_id: doc.id,
 			_rev: doc.rev,
 			content: doc.content,
-			_deleted: doc.deleted === 1,
+			_deleted: false,
 		};
 	};
 }
