@@ -6,6 +6,22 @@ export async function updateFileContent(
 	file: TFile,
 	content: string,
 ): Promise<void> {
+	// DEBUG: Log content details before any operation
+	console.log(`[DEBUG updateFileContent] file=${file.path}`, {
+		content_type: typeof content,
+		content_is_null: content === null,
+		content_is_undefined: content === undefined,
+		content_length: content?.length,
+	});
+
+	// Defensive check: ensure content is a string
+	if (content === null || content === undefined) {
+		console.error(
+			`[DEBUG updateFileContent] CRITICAL: content is ${content} for file ${file.path}`,
+		);
+		throw new Error(`Cannot update file ${file.path}: content is ${content}`);
+	}
+
 	const activeView = app.workspace.getActiveViewOfType(MarkdownView);
 	if (activeView?.file?.path === file.path) {
 		activeView.editor.setValue(content);
