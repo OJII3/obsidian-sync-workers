@@ -291,12 +291,21 @@ export class SyncSettingsTab extends PluginSettingTab {
 						return;
 					}
 
-					this.plugin.settings.metadataCache = {};
-					this.plugin.settings.attachmentCache = {};
-					this.plugin.settings.lastSeq = 0;
-					this.plugin.settings.lastAttachmentSeq = 0;
-					await this.plugin.saveSettings();
-					new Notice("Metadata cache cleared. Next sync will treat all files as new.");
+					button.setDisabled(true);
+					button.setButtonText("Clearing...");
+
+					try {
+						// Reuse the sync service's full reset logic to ensure both
+						// in-memory and persisted metadata caches are cleared.
+						await this.plugin.syncService.performFullReset();
+						new Notice("Metadata cache cleared. Next sync will treat all files as new.");
+					} catch (error) {
+						const message = error instanceof Error ? error.message : "Unknown error";
+						new Notice(`Failed to clear metadata cache: ${message}`);
+					} finally {
+						button.setDisabled(false);
+						button.setButtonText("Clear cache");
+					}
 				}),
 			);
 

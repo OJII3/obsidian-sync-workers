@@ -352,10 +352,13 @@ export class SyncService {
 	async performFullReset(): Promise<void> {
 		console.log("Performing full reset: clearing metadata cache and resetting sequence numbers");
 
-		// Clear metadata cache
+		// Clear in-memory caches in MetadataManager first
+		this.metadataManager.clearAll();
+
+		// Clear persisted metadata cache
 		this.settings.metadataCache = {};
 
-		// Clear attachment cache
+		// Clear persisted attachment cache
 		this.settings.attachmentCache = {};
 
 		// Reset sequence numbers to 0 (will pull all changes on next sync)
@@ -364,9 +367,6 @@ export class SyncService {
 
 		// Persist the cleared state
 		await this.saveSettings();
-
-		// Update managers with cleared state
-		this.metadataManager.updateSettings(this.settings);
 
 		console.log("Full reset complete. Next sync will treat all files as new.");
 

@@ -54,4 +54,13 @@ export class MetadataManager {
 	updateSettings(settings: SyncSettings): void {
 		this.settings = settings;
 	}
+
+	/**
+	 * Clear all in-memory caches.
+	 * Used for full reset operations to ensure both in-memory and persisted state are cleared.
+	 */
+	clearAll(): void {
+		this.metadataCache.clear();
+		this.attachmentCache.clear();
+	}
 }
