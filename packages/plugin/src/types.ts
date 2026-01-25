@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: SyncSettings = {
 export interface DocumentResponse {
 	_id: string;
 	_rev: string;
-	content: string;
+	content: string | null;
 	_deleted?: boolean;
 }
 

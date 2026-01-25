@@ -263,7 +263,7 @@ export class DocumentSync {
 		}
 
 		const doc: DocumentResponse = await response.json();
-		const remoteContent = doc.content;
+		const remoteContent = doc.content ?? "";
 
 		// Check if local file exists
 		const path = docIdToPath(doc._id);
