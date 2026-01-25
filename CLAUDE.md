@@ -485,6 +485,183 @@ sequenceDiagram
     end
 ```
 
+##### ケース5: Base revision not found（フルリセット必要）
+
+クライアントが長期オフラインで、base revisionがクリーンアップで削除済み。フルリセットが必要。
+
+```mermaid
+sequenceDiagram
+    participant B as クライアントB（長期オフライン）
+    participant S as サーバー
+    participant U as ユーザー
+
+    Note over B,S: 初期状態: B は rev=1-xxx を持つ（3ヶ月前）
+    Note over S: cleanup で rev=1-xxx の revision が削除済み
+
+    B->>B: オンラインに復帰
+    B->>B: content を編集（ローカル）
+
+    B->>S: PUT /docs/test (_rev=1-xxx, content=B's edits)
+    S->>S: rev=1-xxx ≠ 現在の10-zzz → 競合検出
+    S->>S: revisions から rev=1-xxx を検索
+    S->>S: 見つからない（cleanup で削除済み）
+    S-->>B: 409 { error: "conflict", reason: "base_revision_not_found", current_content: ..., current_rev: "10-zzz", requires_full_sync: true }
+
+    B->>B: "requires_full_sync: true" を検出
+    B->>U: "Full sync required" モーダル表示
+
+    alt ユーザーがフルリセットを選択
+        B->>B: metadataCache をクリア
+        B->>B: lastSeq = 0 にリセット
+        B->>B: sync() を実行（全ファイルが新規として扱われる）
+        B->>U: "フルリセット完了"
+    else ユーザーがマニュアル解決を選択
+        B->>U: 競合解決モーダル（local/remote選択）
+        Note over B: 既存の conflictResolver を使用
+    else ユーザーがキャンセル
+        B->>B: 同期をスキップ
+    end
+```
+
+##### ケース6: 変更フィード途切れ（Gap検出）
+
+サーバーでクリーンアップが実行され、クライアントが期待するseq範囲が欠損。
+
+```mermaid
+sequenceDiagram
+    participant C as クライアント
+    participant S as サーバー
+    participant U as ユーザー
+
+    Note over C,S: 初期状態: C は lastSeq=100 を持つ
+    Note over S: cleanup で seq=101~199 が削除済み
+    Note over S: 現在の最小 seq=200
+
+    C->>S: GET /api/changes?since=100
+    S->>S: seq > 100 を検索
+    S->>S: 最小の seq=200（101~199 は削除済み）
+
+    alt Gap検出なし（現在の実装・問題あり）
+        S-->>C: { results: [...], last_seq: 250 }
+        C->>C: "変更あり" として処理
+        Note over C: seq=101~199 の変更を見逃す可能性
+    end
+
+    alt Gap検出あり（将来の改善）
+        S->>S: min_available_seq を取得
+        S->>S: since < min_available_seq → gap検出
+        S-->>C: { results: [...], last_seq: 250, gap_detected: true, min_available_seq: 200 }
+
+        C->>C: gap_detected を検出
+        C->>U: "変更フィードに欠損があります。フルリセットを推奨します"
+
+        alt ユーザーがフルリセットを選択
+            C->>C: performFullReset() を実行
+        else ユーザーが続行を選択
+            C->>C: 警告付きで処理を続行
+            C->>C: lastSeq = 250 に更新
+        end
+    end
+```
+
+##### ケース7: フルリセット実行フロー
+
+設定UIからフルリセットを実行するフロー。
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant P as プラグイン
+    participant S as サーバー
+
+    U->>P: 設定画面で「Full reset」をクリック
+    P->>U: 確認ダイアログ「ローカルキャッシュをクリアし、再同期します」
+
+    alt ユーザーがキャンセル
+        P->>U: 何もしない
+    else ユーザーが確認
+        P->>P: metadataCache をクリア
+        P->>P: attachmentCache をクリア
+        P->>P: lastSeq = 0
+        P->>P: lastAttachmentSeq = 0
+        P->>P: 設定を保存
+
+        P->>P: sync() を実行
+        Note over P,S: 通常の同期フロー<br/>（全ファイルが新規として扱われる）
+
+        P->>S: GET /api/changes?since=0
+        S-->>P: { results: [...全ドキュメント...], last_seq: N }
+
+        loop 各ドキュメントについて
+            P->>P: ローカルファイルと比較
+            alt ローカルに存在しない
+                P->>P: リモートからダウンロード
+            else ローカルが変更されている
+                P->>S: push（新規ドキュメントとして）
+            else リモートが新しい
+                P->>P: リモートで上書き
+            else 同じ内容
+                P->>P: メタデータのみ更新
+            end
+        end
+
+        P->>U: "フルリセット完了"
+    end
+```
+
+##### ケース8: 404エラーの詳細処理
+
+ドキュメント取得時の404を詳細に分類して処理。
+
+```mermaid
+sequenceDiagram
+    participant C as クライアント
+    participant S as サーバー
+
+    C->>S: GET /api/docs/test.md?vault_id=xxx
+
+    alt ドキュメントが存在しない（本当に404）
+        S-->>C: 404 { error: "not_found", reason: "missing" }
+        C->>C: 新規ドキュメントとして扱う（push可能）
+    else ドキュメントが削除済み
+        S-->>C: 404 { error: "not_found", reason: "deleted", deleted_at: timestamp, last_rev: "5-xxx" }
+        C->>C: ローカルに存在する場合は削除
+        C->>C: metadataCache から削除
+    end
+```
+
+##### ケース9: 孤児ファイル検出（管理者用）
+
+DBとR2の整合性をチェックし、孤児ファイルを検出。
+
+```mermaid
+sequenceDiagram
+    participant A as 管理者
+    participant S as サーバー
+    participant R2 as R2 Storage
+    participant DB as D1 Database
+
+    A->>S: GET /api/admin/orphans?vault_id=xxx
+
+    S->>DB: SELECT r2_key FROM attachments WHERE deleted=0
+    DB-->>S: [db_keys...]
+
+    S->>R2: list({ prefix: "vaultId/" })
+    R2-->>S: [r2_keys...]
+
+    S->>S: db_orphans = db_keys - r2_keys（DBにあるがR2にない）
+    S->>S: r2_orphans = r2_keys - db_keys（R2にあるがDBにない）
+
+    S-->>A: { db_orphans: [...], r2_orphans: [...], stats: { total_db: N, total_r2: M } }
+
+    alt 管理者がクリーンアップを実行
+        A->>S: POST /api/admin/cleanup-orphans?vault_id=xxx
+        S->>S: db_orphans を deleted=1 にマーク
+        S->>S: r2_orphans を R2 から削除（オプション）
+        S-->>A: { cleaned_db: X, cleaned_r2: Y }
+    end
+```
+
 #### API変更点
 
 現在の`PUT /api/docs/:id`リクエスト:
@@ -736,6 +913,7 @@ curl -H "Authorization: Bearer <your-api-key>" \
 
 ## 最終更新
 
+2026-01-25: メンテナンス・リカバリー機能を追加（フルリセット、requires_full_sync検出、404詳細化）
 2026-01-22: documents複合PK化・revisionsにvault_id追加（マルチVault整合性修正）
 2026-01-22: API認証を環境変数ベースに変更（D1のapi_keysテーブルを廃止）
 2026-01-12: R2によるアタッチメント（画像・バイナリファイル）同期機能を実装
