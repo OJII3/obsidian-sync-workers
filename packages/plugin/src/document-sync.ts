@@ -87,7 +87,7 @@ export class DocumentSync {
 						hasMore = false;
 						break;
 					}
-				} catch (error) {
+				} catch (_error) {
 					syncStats.errors++;
 					hasMore = false;
 					break;
@@ -207,7 +207,7 @@ export class DocumentSync {
 					try {
 						await this.pullDocument(result.id, expectedMtime);
 						syncStats.pushed++;
-					} catch (error) {
+					} catch (_error) {
 						syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {

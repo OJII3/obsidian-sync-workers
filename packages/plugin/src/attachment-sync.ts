@@ -212,7 +212,7 @@ export class AttachmentSync {
 					// Remove from cache since file is deleted
 					attachmentCache.delete(attachment.file.path);
 				}
-			} catch (error) {
+			} catch (_error) {
 				syncStats.errors++;
 			}
 		}

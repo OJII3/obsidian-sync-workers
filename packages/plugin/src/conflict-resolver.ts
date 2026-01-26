@@ -82,7 +82,7 @@ export class ConflictResolver {
 			try {
 				const content = await this.vault.read(file);
 				await this.forcePushDocument(result.id, content, result.current_rev);
-			} catch (error) {
+			} catch (_error) {
 				new Notice(`Failed to force push ${path}.`);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
@@ -103,7 +103,7 @@ export class ConflictResolver {
 					});
 					await this.metadataManager.persistCache();
 				}
-			} catch (error) {
+			} catch (_error) {
 				new Notice(`Failed to apply remote version for ${path}.`);
 			}
 		} else {

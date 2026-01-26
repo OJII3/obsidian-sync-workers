@@ -240,7 +240,7 @@ export class SyncService {
 			}
 			const data = await response.json();
 			return data.ok === true;
-		} catch (error) {
+		} catch (_error) {
 			return false;
 		}
 	}
@@ -265,7 +265,7 @@ export class SyncService {
 				return null;
 			}
 			return await response.json();
-		} catch (error) {
+		} catch (_error) {
 			return null;
 		}
 	}
