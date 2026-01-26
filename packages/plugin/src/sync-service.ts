@@ -85,6 +85,7 @@ export class SyncService {
 		);
 
 		this.attachmentSync = new AttachmentSync(
+			app,
 			vault,
 			settings,
 			this.metadataManager,
@@ -205,7 +206,6 @@ export class SyncService {
 				stats: this.syncStats,
 			});
 		} catch (error) {
-			console.error("Sync error:", error);
 			const message =
 				error instanceof Error
 					? error.message
@@ -225,7 +225,6 @@ export class SyncService {
 
 	async testConnection(): Promise<boolean> {
 		if (!this.settings.apiKey.trim()) {
-			console.warn("Connection test skipped: API key is required.");
 			return false;
 		}
 
@@ -241,8 +240,7 @@ export class SyncService {
 			}
 			const data = await response.json();
 			return data.ok === true;
-		} catch (error) {
-			console.error("Connection test failed:", error);
+		} catch (_error) {
 			return false;
 		}
 	}
@@ -253,7 +251,6 @@ export class SyncService {
 	 */
 	async checkStatus(): Promise<StatusResponse | null> {
 		if (!this.settings.apiKey.trim()) {
-			console.warn("Status check skipped: API key is required.");
 			return null;
 		}
 
@@ -268,8 +265,7 @@ export class SyncService {
 				return null;
 			}
 			return await response.json();
-		} catch (error) {
-			console.error("Status check failed:", error);
+		} catch (_error) {
 			return null;
 		}
 	}
@@ -350,8 +346,6 @@ export class SyncService {
 	 * Local files are preserved and compared with server versions during next sync.
 	 */
 	async performFullReset(): Promise<void> {
-		console.log("Performing full reset: clearing metadata cache and resetting sequence numbers");
-
 		// Clear in-memory caches in MetadataManager first
 		this.metadataManager.clearAll();
 
@@ -367,8 +361,6 @@ export class SyncService {
 
 		// Persist the cleared state
 		await this.saveSettings();
-
-		console.log("Full reset complete. Next sync will treat all files as new.");
 
 		// Note: We don't trigger sync here - let the caller decide when to sync
 		// This avoids potential recursion issues if called from within a sync

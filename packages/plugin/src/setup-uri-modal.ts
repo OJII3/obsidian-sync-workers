@@ -26,7 +26,7 @@ export class CopySetupURIModal extends Modal {
 		if (!this.serverUrl || !this.apiKey) {
 			contentEl.createEl("p", {
 				text: "Server URL and API key must be configured first.",
-				cls: "mod-warning",
+				cls: "sync-workers-warning",
 			});
 			return;
 		}

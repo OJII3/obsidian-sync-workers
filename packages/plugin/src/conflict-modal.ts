@@ -40,7 +40,7 @@ export class ConflictResolutionModal extends Modal {
 
 		contentEl.createEl("p", {
 			text: "Which version would you like to use?",
-			cls: "mod-warning",
+			cls: "sync-workers-warning",
 		});
 
 		// Show content previews

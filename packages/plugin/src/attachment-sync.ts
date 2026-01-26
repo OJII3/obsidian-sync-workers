@@ -1,8 +1,9 @@
-import { TFile, type Vault } from "obsidian";
+import { type App, TFile, type Vault } from "obsidian";
 import { generateAttachmentUrlFromId, WIKILINK_IMAGE_REGEX } from "./attachment-url";
 import { buildAuthHeaders } from "./auth";
 import type { MetadataManager } from "./metadata-manager";
 import { type RetryOptions, retryFetch } from "./retry-fetch";
+import { updateFileContent } from "./sync-utils";
 import type {
 	AttachmentChangesResponse,
 	AttachmentUploadResponse,
@@ -12,6 +13,7 @@ import type {
 import { getContentType, isAttachmentFile } from "./types";
 
 export class AttachmentSync {
+	private app: App;
 	private vault: Vault;
 	private settings: SyncSettings;
 	private metadataManager: MetadataManager;
@@ -24,11 +26,13 @@ export class AttachmentSync {
 	private static readonly MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024;
 
 	constructor(
+		app: App,
 		vault: Vault,
 		settings: SyncSettings,
 		metadataManager: MetadataManager,
 		retryOptions: RetryOptions,
 	) {
+		this.app = app;
 		this.vault = vault;
 		this.settings = settings;
 		this.metadataManager = metadataManager;
@@ -137,7 +141,6 @@ export class AttachmentSync {
 					});
 					syncStats.attachmentsPushed++;
 				} else if (result.status === "rejected") {
-					console.error(`Failed to upload attachment ${file.path}:`, result.reason);
 					syncStats.errors++;
 				}
 			}
@@ -145,7 +148,7 @@ export class AttachmentSync {
 
 		// After all uploads, update markdown references and delete local files
 		if (uploadedAttachments.length > 0) {
-			await this.updateMarkdownReferencesAndCleanup(uploadedAttachments);
+			await this.updateMarkdownReferencesAndCleanup(uploadedAttachments, syncStats);
 		}
 
 		await this.metadataManager.persistCache();
@@ -162,6 +165,7 @@ export class AttachmentSync {
 			hash: string;
 			url: string;
 		}>,
+		syncStats: SyncStats,
 	): Promise<void> {
 		const markdownFiles = this.vault.getMarkdownFiles();
 		const attachmentCache = this.metadataManager.getAttachmentCache();
@@ -196,7 +200,7 @@ export class AttachmentSync {
 			});
 
 			if (modified) {
-				await this.vault.modify(mdFile, content);
+				await updateFileContent(this.app, this.vault, mdFile, content);
 			}
 		}
 
@@ -209,8 +213,8 @@ export class AttachmentSync {
 					// Remove from cache since file is deleted
 					attachmentCache.delete(attachment.file.path);
 				}
-			} catch (error) {
-				console.error(`Failed to delete local attachment ${attachment.file.path}:`, error);
+			} catch (_error) {
+				syncStats.errors++;
 			}
 		}
 	}
