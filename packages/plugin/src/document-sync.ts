@@ -88,7 +88,6 @@ export class DocumentSync {
 						break;
 					}
 				} catch (error) {
-					console.error(`Error processing change for ${change.id}:`, error);
 					syncStats.errors++;
 					hasMore = false;
 					break;
@@ -209,7 +208,6 @@ export class DocumentSync {
 						await this.pullDocument(result.id, expectedMtime);
 						syncStats.pushed++;
 					} catch (error) {
-						console.error(`Failed to pull merged content for ${path}:`, error);
 						syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
@@ -231,7 +229,6 @@ export class DocumentSync {
 				syncStats.conflicts++;
 				await this.conflictResolver.handleConflict(result);
 			} else if (result.error) {
-				console.error(`Failed to update ${result.id}: ${result.error} - ${result.reason || ""}`);
 				syncStats.errors++;
 			}
 		}
@@ -264,29 +261,12 @@ export class DocumentSync {
 
 		const doc: DocumentResponse = await response.json();
 
-		// DEBUG: Log raw document response
-		console.log(`[DEBUG pullDocument] docId=${docId}`, {
-			raw_content_type: typeof doc.content,
-			raw_content_is_null: doc.content === null,
-			raw_content_is_undefined: doc.content === undefined,
-			_deleted: doc._deleted,
-			_rev: doc._rev,
-		});
-
 		// Handle deleted documents - if server says it's deleted, delete locally
 		if (doc._deleted) {
-			console.log(`[DEBUG pullDocument] Document ${docId} is deleted on server, deleting locally`);
 			return await this.deleteLocalFile(doc._id, doc._rev);
 		}
 
 		const remoteContent = doc.content ?? "";
-
-		// DEBUG: Log computed remoteContent
-		console.log(`[DEBUG pullDocument] docId=${docId} remoteContent`, {
-			remoteContent_type: typeof remoteContent,
-			remoteContent_length: remoteContent.length,
-			remoteContent_is_empty: remoteContent === "",
-		});
 
 		// Check if local file exists
 		const path = docIdToPath(doc._id);
@@ -316,25 +296,8 @@ export class DocumentSync {
 				const computedBase = computeCommonBase(localContent, remoteContent);
 				const mergeResult = threeWayMerge(computedBase, localContent, remoteContent);
 
-				// DEBUG: Log merge result
-				console.log(`[DEBUG pullDocument] docId=${docId} mergeResult`, {
-					success: mergeResult.success,
-					content_type: typeof mergeResult.content,
-					content_is_null: mergeResult.content === null,
-					content_is_undefined: mergeResult.content === undefined,
-					has_conflicts: !!mergeResult.conflicts,
-				});
-
 				if (mergeResult.success && mergeResult.content !== undefined) {
 					// Auto-merge succeeded using computed base
-					// DEBUG: Log before updateFileContent
-					console.log(
-						`[DEBUG pullDocument] docId=${docId} calling updateFileContent with mergeResult.content`,
-						{
-							content_type: typeof mergeResult.content,
-							content_length: mergeResult.content?.length,
-						},
-					);
 					await updateFileContent(this.app, this.vault, file, mergeResult.content);
 
 					// Update rev to prevent re-pulling the same change
@@ -361,15 +324,6 @@ export class DocumentSync {
 			}
 
 			// No local modifications - safe to apply remote content
-			// DEBUG: Log before updateFileContent with remoteContent
-			console.log(
-				`[DEBUG pullDocument] docId=${docId} calling updateFileContent with remoteContent (no local mods)`,
-				{
-					content_type: typeof remoteContent,
-					content_is_null: remoteContent === null,
-					content_length: remoteContent?.length,
-				},
-			);
 			await updateFileContent(this.app, this.vault, file, remoteContent);
 		} else {
 			// Create new file, ensuring parent folders exist
@@ -392,13 +346,6 @@ export class DocumentSync {
 					}
 				}
 			}
-			// DEBUG: Log before vault.create
-			console.log(`[DEBUG pullDocument] docId=${docId} calling vault.create`, {
-				path,
-				content_type: typeof remoteContent,
-				content_is_null: remoteContent === null,
-				content_length: remoteContent?.length,
-			});
 			await this.vault.create(path, remoteContent);
 		}
 

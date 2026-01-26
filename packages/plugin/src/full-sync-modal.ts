@@ -30,7 +30,7 @@ export class FullSyncRequiredModal extends Modal {
 
 		contentEl.createEl("p", {
 			text: this.getReasonMessage(),
-			cls: "mod-warning",
+			cls: "sync-workers-warning",
 		});
 
 		contentEl.createEl("p", {

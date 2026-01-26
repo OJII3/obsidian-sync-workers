@@ -17,10 +17,6 @@ export default class SyncWorkersPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Add status bar item
-		this.statusBarItem = this.addStatusBarItem();
-		this.updateStatusBar({ status: "idle" });
-
 		// Initialize sync service
 		this.syncService = new SyncService(
 			this.app,
@@ -29,14 +25,6 @@ export default class SyncWorkersPlugin extends Plugin {
 			async () => await this.saveSettings(),
 			(status) => this.updateStatusBar(status),
 		);
-
-		// Add settings tab
-		this.addSettingTab(new SyncSettingsTab(this.app, this));
-
-		// Add ribbon icon
-		this.addRibbonIcon("sync", "Sync now", async () => {
-			await this.syncService.performSync();
-		});
 
 		// Add command palette commands
 		this.addCommand({
@@ -90,13 +78,26 @@ export default class SyncWorkersPlugin extends Plugin {
 			await this.openImportModalWithURI(uri);
 		});
 
-		// Start auto sync if enabled
-		if (this.settings.autoSync) {
-			this.startAutoSync();
-		}
-
 		this.app.workspace.onLayoutReady(() => {
 			this.layoutReady = true;
+
+			// Add settings tab
+			this.addSettingTab(new SyncSettingsTab(this.app, this));
+
+			// Add status bar item
+			this.statusBarItem = this.addStatusBarItem();
+			this.updateStatusBar(this.lastStatus);
+
+			// Add ribbon icon
+			this.addRibbonIcon("sync", "Sync now", async () => {
+				await this.syncService.performSync();
+			});
+
+			// Start auto sync if enabled
+			if (this.settings.autoSync) {
+				this.startAutoSync();
+			}
+
 			if (this.settings.syncOnStartup) {
 				this.scheduleSync("startup");
 			}

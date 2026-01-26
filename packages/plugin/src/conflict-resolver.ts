@@ -1,4 +1,4 @@
-import { type App, TFile, type Vault } from "obsidian";
+import { type App, Notice, TFile, type Vault } from "obsidian";
 import { buildAuthHeaders } from "./auth";
 import { ConflictResolution, ConflictResolutionModal } from "./conflict-modal";
 import { FullSyncRequiredModal, FullSyncResolution } from "./full-sync-modal";
@@ -37,16 +37,8 @@ export class ConflictResolver {
 		const path = docIdToPath(result.id);
 		const file = this.vault.getAbstractFileByPath(path);
 
-		// Log conflict details for debugging
-		if (result.reason) {
-			console.warn(`Sync conflict for ${path}: ${result.reason}`);
-		}
-		if (result.conflicts && result.conflicts.length > 0) {
-			console.warn(`Merge conflicts in ${path}:`, result.conflicts.length, "regions");
-		}
-
 		if (!(file instanceof TFile)) {
-			console.error(`Cannot resolve conflict: file not found ${path}`);
+			new Notice(`File not found for conflict resolution: ${path}.`);
 			return ConflictResolution.Cancel;
 		}
 
@@ -91,7 +83,7 @@ export class ConflictResolver {
 				const content = await this.vault.read(file);
 				await this.forcePushDocument(result.id, content, result.current_rev);
 			} catch (error) {
-				console.error(`Failed to force push ${path}:`, error);
+				new Notice(`Failed to force push ${path}.`);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version (or deletion)
@@ -112,7 +104,7 @@ export class ConflictResolver {
 					await this.metadataManager.persistCache();
 				}
 			} catch (error) {
-				console.error(`Failed to apply remote version ${path}:`, error);
+				new Notice(`Failed to apply remote version for ${path}.`);
 			}
 		} else {
 			// Cancel - keep local but don't sync
