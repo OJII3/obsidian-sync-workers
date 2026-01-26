@@ -148,7 +148,7 @@ export class AttachmentSync {
 
 		// After all uploads, update markdown references and delete local files
 		if (uploadedAttachments.length > 0) {
-			await this.updateMarkdownReferencesAndCleanup(uploadedAttachments);
+			await this.updateMarkdownReferencesAndCleanup(uploadedAttachments, syncStats);
 		}
 
 		await this.metadataManager.persistCache();
@@ -165,6 +165,7 @@ export class AttachmentSync {
 			hash: string;
 			url: string;
 		}>,
+		syncStats: SyncStats,
 	): Promise<void> {
 		const markdownFiles = this.vault.getMarkdownFiles();
 		const attachmentCache = this.metadataManager.getAttachmentCache();
