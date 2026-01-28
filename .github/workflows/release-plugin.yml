@@ -16,7 +16,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -29,14 +29,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title "$tag" \
-            --generate-notes \
-            packages/plugin/main.js \
-            packages/plugin/manifest.json \
-            packages/plugin/styles.css || \
-          gh release create "$tag" \
-            --title "$tag" \
-            --generate-notes \
-            packages/plugin/main.js \
+          assets=(
+            packages/plugin/main.js
             packages/plugin/manifest.json
+            packages/plugin/versions.json
+          )
+          if [[ -f packages/plugin/styles.css ]]; then
+            assets+=(packages/plugin/styles.css)
+          fi
+          gh release create "$tag" \
+            --title "$tag" \
+            --generate-notes \
+            "${assets[@]}"
