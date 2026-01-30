@@ -1,12 +1,12 @@
 # Obsidian Sync Workers
 
-シンプルなObsidian同期システム - Cloudflare WorkersとD1を使用したサーバーと、Obsidianプラグインのモノレポ
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OJII3/obsidian-sync-workers/tree/main/packages/server)
+Cloudflare だけで完結する Obsidian 同期システム - Workers + D1 + R2 のサーバーと、Obsidian プラグインのモノレポ
 
 ## 概要
 
-このプロジェクトは、[obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync)のシンプル版として、2つのパッケージで構成されています：
+Cloudflare のサービスだけで動作する Obsidian 同期サーバーです。CouchDB などの外部データベースは不要で、Cloudflare の無料枠内で運用できます。
+
+このプロジェクトは 2 つのパッケージで構成されています：
 
 1. **Server (`packages/server`)** - Cloudflare WorkersとD1データベースを使った同期サーバー
 2. **Plugin (`packages/plugin`)** - Obsidianプラグイン（クライアント側）
@@ -105,6 +105,32 @@ bun run dev:server
 サーバーは `http://localhost:8787` で起動します。
 
 ### 5. デプロイ
+
+#### 方法 1: GitHub Actions（推奨）
+
+フォークして GitHub Actions でデプロイする方法です。
+
+1. このリポジトリをフォーク
+
+2. Cloudflare ダッシュボードで準備：
+   - D1 データベースを作成（`obsidian-sync`）
+   - R2 バケットを作成（`obsidian-attachments`）
+   - API トークンを作成（Workers の編集権限が必要）
+
+3. フォークしたリポジトリの Settings → Secrets and variables → Actions で以下を設定：
+   - `CLOUDFLARE_API_TOKEN`: Cloudflare API トークン
+   - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare アカウント ID
+
+4. `packages/server/wrangler.jsonc` の `database_id` を実際の値に更新してコミット
+
+5. Actions タブから "Deploy Server" ワークフローを手動実行（Run workflow）
+
+6. デプロイ後、Cloudflare ダッシュボードまたは CLI で API キーを設定：
+   ```bash
+   bunx wrangler secret put API_KEY
+   ```
+
+#### 方法 2: 手動デプロイ
 
 ```bash
 # 本番環境用のAPIキーを設定
