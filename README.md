@@ -1,28 +1,28 @@
 # Obsidian Sync Workers
 
-Cloudflare だけで完結する Obsidian 同期システム - Workers + D1 + R2 のサーバーと、Obsidian プラグインのモノレポ
+A self-contained Obsidian sync system powered entirely by Cloudflare - a monorepo containing a Workers + D1 + R2 server and an Obsidian plugin.
 
-## 概要
+## Overview
 
-Cloudflare のサービスだけで動作する Obsidian 同期サーバーです。CouchDB などの外部データベースは不要で、Cloudflare の無料枠内で運用できます。
+This is an Obsidian sync server that runs entirely on Cloudflare services. No external databases like CouchDB are required, and it can be operated within Cloudflare's free tier.
 
-このプロジェクトは 2 つのパッケージで構成されています：
+This project consists of two packages:
 
-1. **Server (`packages/server`)** - Cloudflare WorkersとD1データベースを使った同期サーバー
-2. **Plugin (`packages/plugin`)** - Obsidianプラグイン（クライアント側）
+1. **Server (`packages/server`)** - Sync server using Cloudflare Workers and D1 database
+2. **Plugin (`packages/plugin`)** - Obsidian plugin (client-side)
 
-### 主な機能
+### Key Features
 
-- ドキュメントのCRUD操作
-- リビジョン管理と競合検出
-- 変更フィード（増分同期）
-- 論理削除
-- マルチVault対応
-- 自動同期 / 手動同期
-- 競合解決UI（自動マージ + 手動選択）
-- アタッチメント同期（R2）
+- Document CRUD operations
+- Revision management and conflict detection
+- Change feed (incremental sync)
+- Soft delete
+- Multi-vault support
+- Auto sync / manual sync
+- Conflict resolution UI (auto merge + manual selection)
+- Attachment sync (R2)
 
-## アーキテクチャ
+## Architecture
 
 ```
 Obsidian Plugin (Client)
@@ -32,15 +32,15 @@ Cloudflare Workers (Elysia Framework)
 D1 Database (SQLite) + R2 (Attachments)
 ```
 
-## セットアップ
+## Setup
 
-### 前提条件
+### Prerequisites
 
-- Bun (最新版推奨)
-- Cloudflareアカウント（サーバーデプロイ用）
-- Wrangler CLI（`bunx wrangler` で実行可能）
+- Bun (latest version recommended)
+- Cloudflare account (for server deployment)
+- Wrangler CLI (can be run via `bunx wrangler`)
 
-### 1. リポジトリのクローンと依存関係のインストール
+### 1. Clone the Repository and Install Dependencies
 
 ```bash
 git clone https://github.com/OJII3/obsidian-sync-workers.git
@@ -49,22 +49,22 @@ cd obsidian-sync-workers
 bun install
 ```
 
-## サーバーのセットアップ
+## Server Setup
 
-### 0. APIキーの生成と設定（必須）
+### 0. Generate and Configure API Key (Required)
 
 ```bash
 openssl rand -hex 32
 ```
 
-生成したキーを以下のように設定します：
+Configure the generated key as follows:
 
-- **ローカル開発**: `packages/server/.dev.vars` に `API_KEY=生成したキー` を記載
-- **本番環境**: `wrangler secret put API_KEY` コマンドで設定
+- **Local development**: Add `API_KEY=your-generated-key` to `packages/server/.dev.vars`
+- **Production**: Set via `wrangler secret put API_KEY` command
 
-サーバーとプラグインで同じAPIキーを使用してください。
+Use the same API key for both the server and the plugin.
 
-### 1. D1データベースの作成
+### 1. Create D1 Database
 
 ```bash
 cd packages/server
@@ -72,104 +72,104 @@ cd packages/server
 bunx wrangler d1 create obsidian-sync
 ```
 
-出力された `database_id` を `wrangler.jsonc` の `d1_databases[0].database_id` に設定してください。
+Set the output `database_id` in `wrangler.jsonc` under `d1_databases[0].database_id`.
 
-### 2. データベーススキーマの適用
+### 2. Apply Database Schema
 
 ```bash
-# 本番環境
+# Production
 bun run db:init
 
-# ローカル開発環境
+# Local development
 bun run db:local
 ```
 
-### 3. R2バケットの作成（アタッチメント同期用）
+### 3. Create R2 Bucket (for Attachment Sync)
 
 ```bash
 bunx wrangler r2 bucket create obsidian-attachments
 ```
 
-`wrangler.jsonc` に既にR2バインディングが設定済みです。
+The R2 binding is already configured in `wrangler.jsonc`.
 
-### 4. ローカル開発サーバーの起動
+### 4. Start Local Development Server
 
 ```bash
-# packages/server ディレクトリから
+# From packages/server directory
 bun run dev
 
-# またはルートディレクトリから
+# Or from root directory
 bun run dev:server
 ```
 
-サーバーは `http://localhost:8787` で起動します。
+The server will start at `http://localhost:8787`.
 
-### 5. デプロイ
+### 5. Deploy
 
-#### 方法 1: GitHub Actions（推奨）
+#### Method 1: GitHub Actions (Recommended)
 
-フォークして GitHub Actions でデプロイする方法です。
+Deploy by forking the repository and using GitHub Actions.
 
-1. このリポジトリをフォーク
+1. Fork this repository
 
-2. Cloudflare ダッシュボードで準備：
-   - D1 データベースを作成（`obsidian-sync`）
-   - R2 バケットを作成（`obsidian-attachments`）
-   - API トークンを作成（Workers の編集権限が必要）
+2. Prepare in Cloudflare Dashboard:
+   - Create D1 database (`obsidian-sync`)
+   - Create R2 bucket (`obsidian-attachments`)
+   - Create API token (requires Workers edit permission)
 
-3. フォークしたリポジトリの Settings → Secrets and variables → Actions で以下を設定：
-   - `CLOUDFLARE_API_TOKEN`: Cloudflare API トークン
-   - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare アカウント ID
+3. In your forked repository, go to Settings → Secrets and variables → Actions and set:
+   - `CLOUDFLARE_API_TOKEN`: Cloudflare API token
+   - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID
 
-4. `packages/server/wrangler.jsonc` の `database_id` を実際の値に更新してコミット
+4. Update the `database_id` in `packages/server/wrangler.jsonc` with the actual value and commit
 
-5. Actions タブから "Deploy Server" ワークフローを手動実行（Run workflow）
+5. Go to the Actions tab and manually run the "Deploy Server" workflow (Run workflow)
 
-6. デプロイ後、Cloudflare ダッシュボードまたは CLI で API キーを設定：
+6. After deployment, set the API key via Cloudflare Dashboard or CLI:
    ```bash
    bunx wrangler secret put API_KEY
    ```
 
-#### 方法 2: 手動デプロイ
+#### Method 2: Manual Deploy
 
 ```bash
-# 本番環境用のAPIキーを設定
+# Set API key for production
 cd packages/server
 bunx wrangler secret put API_KEY
-# プロンプトでAPIキーを入力
+# Enter API key at the prompt
 
-# デプロイ
+# Deploy
 bun run deploy
 
-# またはルートディレクトリから
+# Or from root directory
 bun run build:server
 ```
 
-## プラグインのセットアップ
+## Plugin Setup
 
-### 開発モード
+### Development Mode
 
 ```bash
-# packages/plugin ディレクトリから
+# From packages/plugin directory
 bun run dev
 
-# またはルートディレクトリから
+# Or from root directory
 bun run dev:plugin
 ```
 
-### ビルド
+### Build
 
 ```bash
-# packages/plugin ディレクトリから
+# From packages/plugin directory
 bun run build
 
-# またはルートディレクトリから
+# Or from root directory
 bun run build:plugin
 ```
 
-### Obsidianへのインストール
+### Install to Obsidian
 
-1. `packages/plugin` ディレクトリ全体を Obsidianのプラグインフォルダにコピー：
+1. Copy the entire `packages/plugin` directory to Obsidian's plugin folder:
    ```bash
    # Linux/Mac
    cp -r packages/plugin /path/to/your/vault/.obsidian/plugins/obsidian-sync-workers
@@ -178,66 +178,66 @@ bun run build:plugin
    xcopy packages\plugin C:\path\to\your\vault\.obsidian\plugins\obsidian-sync-workers /E /I
    ```
 
-2. Obsidianを再起動
-3. Settings → Community plugins → Obsidian Sync Workers を有効化
+2. Restart Obsidian
+3. Go to Settings → Community plugins → Enable Obsidian Sync Workers
 
-### プラグインの設定
+### Plugin Configuration
 
-1. Settings → Obsidian Sync Workers を開く
-2. **Server URL** を設定（例：`https://your-worker.workers.dev` または `http://localhost:8787`）
-3. **API key** にサーバーと同じAPIキーを入力
-4. **Vault ID** を設定（デフォルト：`default`）
-5. **Auto sync** を有効化（オプション）
-6. **Sync interval** を設定（5秒〜60分から選択）
-7. **Sync attachments** を有効化（画像等のバイナリファイルを同期する場合）
-8. **Test** ボタンでサーバー接続をテスト
-9. **Sync now** で手動同期を実行
+1. Open Settings → Obsidian Sync Workers
+2. Set **Server URL** (e.g., `https://your-worker.workers.dev` or `http://localhost:8787`)
+3. Enter the same **API key** as the server
+4. Set **Vault ID** (default: `default`)
+5. Enable **Auto sync** (optional)
+6. Set **Sync interval** (choose from 5 seconds to 60 minutes)
+7. Enable **Sync attachments** (to sync binary files like images)
+8. Click **Test** to test server connection
+9. Click **Sync now** to perform manual sync
 
-## 使い方
+## Usage
 
-### 手動同期
+### Manual Sync
 
-- リボンアイコンの同期ボタンをクリック
-- コマンドパレット（Ctrl/Cmd+P）から "Sync now" を実行
+- Click the sync button in the ribbon
+- Run "Sync now" from the command palette (Ctrl/Cmd+P)
 
-### 自動同期
+### Auto Sync
 
-設定で **Auto sync** を有効化すると、指定した間隔で自動的に同期されます。
+Enable **Auto sync** in settings to automatically sync at the specified interval.
 
-### コマンド
+### Commands
 
-- `Sync now` - 即座に同期を実行
-- `Toggle auto sync` - 自動同期のオン/オフを切り替え
+- `Sync now` - Execute sync immediately
+- `Toggle auto sync` - Toggle auto sync on/off
 
-## トラブルシューティング
+## Troubleshooting
 
-### サーバーに接続できない
+### Cannot Connect to Server
 
-1. サーバーが起動しているか確認
-2. Server URLが正しいか確認
-3. APIキーが設定されているか確認（プラグインに保存済みか）
-4. CORSエラーの場合、サーバー側のCORS設定を確認
+1. Verify the server is running
+2. Check if Server URL is correct
+3. Verify API key is configured (saved in plugin)
+4. If CORS error, check CORS settings on server side
 
-### 同期が動作しない
+### Sync Not Working
 
-1. Test connection で接続をテスト
-2. ブラウザのコンソールログを確認
-3. サーバーのログを確認
+1. Test connection with Test button
+2. Check browser console logs
+3. Check server logs
 
-### プラグインが表示されない
+### Plugin Not Showing
 
-1. プラグインフォルダに正しくコピーされているか確認
-2. `main.js` がビルドされているか確認
-3. Obsidianを再起動
+1. Verify plugin is correctly copied to plugin folder
+2. Verify `main.js` is built
+3. Restart Obsidian
 
-## 仕様・開発メモ
+## Specifications and Development Notes
 
-仕様や内部実装の詳細は `CLAUDE.md`、各パッケージの開発メモは以下を参照してください。
+For specifications and internal implementation details, see `CLAUDE.md`. For development notes on each package, refer to:
 
 - `CLAUDE.md`
 - `packages/server/CLAUDE.md`
 - `packages/plugin/CLAUDE.md`
 
-## ライセンス
+## License
 
 MIT
