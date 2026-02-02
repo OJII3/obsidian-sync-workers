@@ -29,6 +29,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
+          # Remove 'v' prefix for Obsidian plugin release (e.g., v1.1.1 -> 1.1.1)
+          version="${tag#v}"
           assets=(
             packages/plugin/main.js
             packages/plugin/manifest.json
@@ -37,7 +39,7 @@ jobs:
           if [[ -f packages/plugin/styles.css ]]; then
             assets+=(packages/plugin/styles.css)
           fi
-          gh release create "$tag" \
-            --title "$tag" \
+          gh release create "$version" \
+            --title "$version" \
             --generate-notes \
             "${assets[@]}"
