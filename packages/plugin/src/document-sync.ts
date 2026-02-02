@@ -114,20 +114,19 @@ export class DocumentSync {
 		const pushTimeMtimes = new Map<string, number>();
 
 		// Check for modified files
-		// Use in-memory stat for initial check to avoid disk I/O for unchanged files
 		for (const file of files) {
 			currentFilePaths.add(file.path);
 			const metadata = metadataCache.get(file.path);
 
-			// Quick check using in-memory mtime to avoid disk I/O for unchanged files
+			// Quick check using in-memory mtime
 			if (metadata && file.stat.mtime <= metadata.lastModified) {
 				continue;
 			}
 
-			// File appears modified - get accurate mtime from disk for the push
+			// Get mtime via getFileMtime for consistency
 			const fileModTime = getFileMtime(this.vault, file.path);
 
-			// Double-check with accurate disk mtime (in-memory might be slightly off)
+			// Double-check mtime (handles edge cases where file object may be stale)
 			if (metadata && fileModTime <= metadata.lastModified) {
 				continue;
 			}
@@ -280,14 +279,14 @@ export class DocumentSync {
 				return true;
 			}
 
-			// Get current file mtime from disk for accurate comparison
+			// Get current file mtime for comparison
 			const currentMtime = getFileMtime(this.vault, path);
 
 			// Determine if we should check for conflicts
 			// If expectedMtime is provided, only skip conflict check if file hasn't changed since push
 			const shouldSkipConflictCheck = expectedMtime !== undefined && currentMtime <= expectedMtime;
 
-			// Check for local modifications using fresh disk mtime (not stale file.stat.mtime)
+			// Check for local modifications
 			const isModified = !localMeta || currentMtime > localMeta.lastModified;
 			if (!shouldSkipConflictCheck && isModified) {
 				// Local file has been modified - try to merge using computed common base
