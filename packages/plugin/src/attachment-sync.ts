@@ -68,7 +68,7 @@ export class AttachmentSync {
 				throw new Error(`Failed to fetch attachment changes: ${response.statusText}`);
 			}
 
-			const data: AttachmentChangesResponse = await response.json();
+			const data = (await response.json()) as AttachmentChangesResponse;
 
 			// Update last sequence (we don't need to process individual changes
 			// since attachments are accessed via URL, not local files)
@@ -209,11 +209,11 @@ export class AttachmentSync {
 			try {
 				const file = this.vault.getAbstractFileByPath(attachment.file.path);
 				if (file instanceof TFile) {
-					await this.vault.delete(file);
+					await this.app.fileManager.trashFile(file);
 					// Remove from cache since file is deleted
 					attachmentCache.delete(attachment.file.path);
 				}
-			} catch (_error) {
+			} catch {
 				syncStats.errors++;
 			}
 		}
@@ -271,7 +271,7 @@ export class AttachmentSync {
 				throw new Error(`File ${file.path} is too large for the server.`);
 			}
 			if (response.status === 400) {
-				const errorBody = await response.json().catch(() => ({}));
+				const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
 				throw new Error(
 					`Invalid upload for ${file.path}: ${errorBody.error || response.statusText}`,
 				);
@@ -284,7 +284,7 @@ export class AttachmentSync {
 			throw new Error(`Failed to upload attachment ${file.path}: ${response.statusText}`);
 		}
 
-		const result: AttachmentUploadResponse = await response.json();
+		const result = (await response.json()) as AttachmentUploadResponse;
 
 		if (result.ok) {
 			const attachmentId = result.id;

@@ -23,7 +23,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 				text
 					.setPlaceholder("http://localhost:8787")
 					.setValue(this.plugin.settings.serverUrl)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						const trimmedValue = value.trim();
 
 						// Validate URL format
@@ -34,7 +34,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 							text.inputEl.removeClass("is-invalid");
 							serverUrlSetting.setDesc("The URL of your Cloudflare Workers sync server");
 							this.plugin.settings.serverUrl = trimmedValue;
-							await this.plugin.saveSettings();
+							void this.plugin.saveSettings();
 						}
 					}),
 			);
@@ -48,35 +48,37 @@ export class SyncSettingsTab extends PluginSettingTab {
 				return text
 					.setPlaceholder("Enter API key")
 					.setValue(this.plugin.settings.apiKey)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						const trimmedValue = value.trim();
 						if (!trimmedValue) {
 							text.inputEl.addClass("is-invalid");
 							apiKeySetting.setDesc("API key is required.");
 							this.plugin.settings.apiKey = "";
-							await this.plugin.saveSettings();
+							void this.plugin.saveSettings();
 							return;
 						}
 						text.inputEl.removeClass("is-invalid");
 						apiKeySetting.setDesc("Required. Generate with: openssl rand -hex 32");
 						this.plugin.settings.apiKey = trimmedValue;
-						await this.plugin.saveSettings();
+						void this.plugin.saveSettings();
 					});
 			})
 			.addButton((button) =>
-				button.setButtonText("Copy").onClick(async () => {
+				button.setButtonText("Copy").onClick(() => {
 					const apiKey = this.plugin.settings.apiKey;
 					if (!apiKey) {
 						new Notice("No API key to copy.");
 						return;
 					}
-					try {
-						await navigator.clipboard.writeText(apiKey);
-						button.setButtonText("Copied!");
-						setTimeout(() => button.setButtonText("Copy"), 1500);
-					} catch {
-						new Notice("Failed to copy to clipboard.");
-					}
+					navigator.clipboard.writeText(apiKey).then(
+						() => {
+							button.setButtonText("Copied!");
+							setTimeout(() => button.setButtonText("Copy"), 1500);
+						},
+						() => {
+							new Notice("Failed to copy to clipboard.");
+						},
+					);
 				}),
 			);
 
@@ -88,9 +90,9 @@ export class SyncSettingsTab extends PluginSettingTab {
 				text
 					.setPlaceholder("default")
 					.setValue(this.plugin.settings.vaultId)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.vaultId = value.trim() || "default";
-						await this.plugin.saveSettings();
+						void this.plugin.saveSettings();
 					}),
 			);
 
@@ -99,9 +101,9 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setName("Auto sync")
 			.setDesc("Automatically sync at regular intervals")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoSync).onChange(async (value) => {
+				toggle.setValue(this.plugin.settings.autoSync).onChange((value) => {
 					this.plugin.settings.autoSync = value;
-					await this.plugin.saveSettings();
+					void this.plugin.saveSettings();
 					if (value) {
 						this.plugin.startAutoSync();
 					} else {
@@ -115,9 +117,9 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setName("Sync on startup")
 			.setDesc("Sync once when Obsidian starts")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
+				toggle.setValue(this.plugin.settings.syncOnStartup).onChange((value) => {
 					this.plugin.settings.syncOnStartup = value;
-					await this.plugin.saveSettings();
+					void this.plugin.saveSettings();
 				}),
 			);
 
@@ -126,7 +128,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setName("Sync on save")
 			.setDesc("Sync when files are saved")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
+				toggle.setValue(this.plugin.settings.syncOnSave).onChange((value) => {
 					this.plugin.setSyncOnSave(value);
 				}),
 			);
@@ -136,9 +138,9 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setName("Sync attachments")
 			.setDesc("Sync binary files like images, PDFs, and other attachments (requires R2 storage)")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncAttachments).onChange(async (value) => {
+				toggle.setValue(this.plugin.settings.syncAttachments).onChange((value) => {
 					this.plugin.settings.syncAttachments = value;
-					await this.plugin.saveSettings();
+					void this.plugin.saveSettings();
 				}),
 			);
 
@@ -162,9 +164,9 @@ export class SyncSettingsTab extends PluginSettingTab {
 					dropdown.addOption(value.toString(), label);
 				}
 				dropdown.setValue(this.plugin.settings.syncInterval.toString());
-				dropdown.onChange(async (value) => {
+				dropdown.onChange((value) => {
 					this.plugin.settings.syncInterval = Number.parseInt(value, 10);
-					await this.plugin.saveSettings();
+					void this.plugin.saveSettings();
 					if (this.plugin.settings.autoSync) {
 						this.plugin.startAutoSync();
 					}
@@ -179,25 +181,34 @@ export class SyncSettingsTab extends PluginSettingTab {
 				button
 					.setButtonText("Test")
 					.setCta()
-					.onClick(async () => {
+					.onClick(() => {
 						button.setButtonText("Testing...");
 						button.setDisabled(true);
 
-						const success = await this.plugin.syncService.testConnection();
-
-						if (success) {
-							button.setButtonText("✓ Connected");
-							setTimeout(() => {
-								button.setButtonText("Test");
-								button.setDisabled(false);
-							}, 2000);
-						} else {
-							button.setButtonText("✗ Failed");
-							setTimeout(() => {
-								button.setButtonText("Test");
-								button.setDisabled(false);
-							}, 2000);
-						}
+						this.plugin.syncService.testConnection().then(
+							(success) => {
+								if (success) {
+									button.setButtonText("✓ Connected");
+									setTimeout(() => {
+										button.setButtonText("Test");
+										button.setDisabled(false);
+									}, 2000);
+								} else {
+									button.setButtonText("✗ Failed");
+									setTimeout(() => {
+										button.setButtonText("Test");
+										button.setDisabled(false);
+									}, 2000);
+								}
+							},
+							() => {
+								button.setButtonText("✗ Failed");
+								setTimeout(() => {
+									button.setButtonText("Test");
+									button.setDisabled(false);
+								}, 2000);
+							},
+						);
 					}),
 			);
 
@@ -209,10 +220,11 @@ export class SyncSettingsTab extends PluginSettingTab {
 				button
 					.setButtonText("Sync now")
 					.setCta()
-					.onClick(async () => {
+					.onClick(() => {
 						button.setDisabled(true);
-						await this.plugin.syncService.performSync();
-						button.setDisabled(false);
+						this.plugin.syncService.performSync().finally(() => {
+							button.setDisabled(false);
+						});
 					}),
 			);
 
@@ -238,7 +250,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setDesc("Import settings from another device using a setup URI")
 			.addButton((button) =>
 				button.setButtonText("Import").onClick(() => {
-					this.plugin.openImportModal();
+					void this.plugin.openImportModal();
 				}),
 			);
 
@@ -252,29 +264,31 @@ export class SyncSettingsTab extends PluginSettingTab {
 				button
 					.setButtonText("Full reset")
 					.setWarning()
-					.onClick(async () => {
-						// Confirmation dialog
-						const confirmed = await this.confirmFullReset();
-						if (!confirmed) {
-							return;
-						}
+					.onClick(() => {
+						void (async () => {
+							// Confirmation dialog
+							const confirmed = await this.confirmFullReset();
+							if (!confirmed) {
+								return;
+							}
 
-						button.setDisabled(true);
-						button.setButtonText("Resetting...");
+							button.setDisabled(true);
+							button.setButtonText("Resetting...");
 
-						try {
-							await this.plugin.syncService.performFullReset();
-							new Notice("Full reset complete. Syncing...");
-							// Trigger a sync after reset
-							await this.plugin.syncService.performSync();
-							new Notice("Sync complete.");
-						} catch (error) {
-							const message = error instanceof Error ? error.message : "Unknown error";
-							new Notice(`Full reset failed: ${message}`);
-						} finally {
-							button.setDisabled(false);
-							button.setButtonText("Full reset");
-						}
+							try {
+								await this.plugin.syncService.performFullReset();
+								new Notice("Full reset complete. Syncing...");
+								// Trigger a sync after reset
+								await this.plugin.syncService.performSync();
+								new Notice("Sync complete.");
+							} catch (error) {
+								const message = error instanceof Error ? error.message : "Unknown error";
+								new Notice(`Full reset failed: ${message}`);
+							} finally {
+								button.setDisabled(false);
+								button.setButtonText("Full reset");
+							}
+						})();
 					}),
 			);
 
@@ -284,28 +298,30 @@ export class SyncSettingsTab extends PluginSettingTab {
 				"Clear local sync metadata without re-syncing. Next sync will treat all files as new.",
 			)
 			.addButton((button) =>
-				button.setButtonText("Clear cache").onClick(async () => {
-					// Confirmation dialog
-					const confirmed = await this.confirmClearCache();
-					if (!confirmed) {
-						return;
-					}
+				button.setButtonText("Clear cache").onClick(() => {
+					void (async () => {
+						// Confirmation dialog
+						const confirmed = await this.confirmClearCache();
+						if (!confirmed) {
+							return;
+						}
 
-					button.setDisabled(true);
-					button.setButtonText("Clearing...");
+						button.setDisabled(true);
+						button.setButtonText("Clearing...");
 
-					try {
-						// Reuse the sync service's full reset logic to ensure both
-						// in-memory and persisted metadata caches are cleared.
-						await this.plugin.syncService.performFullReset();
-						new Notice("Metadata cache cleared. Next sync will treat all files as new.");
-					} catch (error) {
-						const message = error instanceof Error ? error.message : "Unknown error";
-						new Notice(`Failed to clear metadata cache: ${message}`);
-					} finally {
-						button.setDisabled(false);
-						button.setButtonText("Clear cache");
-					}
+						try {
+							// Reuse the sync service's full reset logic to ensure both
+							// in-memory and persisted metadata caches are cleared.
+							await this.plugin.syncService.performFullReset();
+							new Notice("Metadata cache cleared. Next sync will treat all files as new.");
+						} catch (error) {
+							const message = error instanceof Error ? error.message : "Unknown error";
+							new Notice(`Failed to clear metadata cache: ${message}`);
+						} finally {
+							button.setDisabled(false);
+							button.setButtonText("Clear cache");
+						}
+					})();
 				}),
 			);
 

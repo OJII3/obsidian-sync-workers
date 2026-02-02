@@ -238,9 +238,9 @@ export class SyncService {
 			if (!response.ok) {
 				return false;
 			}
-			const data = await response.json();
+			const data = (await response.json()) as { ok?: boolean };
 			return data.ok === true;
-		} catch (_error) {
+		} catch {
 			return false;
 		}
 	}
@@ -264,8 +264,8 @@ export class SyncService {
 			if (!response.ok) {
 				return null;
 			}
-			return await response.json();
-		} catch (_error) {
+			return (await response.json()) as StatusResponse;
+		} catch {
 			return null;
 		}
 	}

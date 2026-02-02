@@ -40,7 +40,7 @@ export default class SyncWorkersPlugin extends Plugin {
 			name: "Toggle auto sync",
 			callback: () => {
 				this.settings.autoSync = !this.settings.autoSync;
-				this.saveSettings();
+				void this.saveSettings();
 				if (this.settings.autoSync) {
 					this.startAutoSync();
 				} else {
@@ -125,8 +125,8 @@ export default class SyncWorkersPlugin extends Plugin {
 		this.stopAutoSync(); // Clear any existing interval
 
 		const intervalMs = this.settings.syncInterval * 1000;
-		this.syncIntervalId = window.setInterval(async () => {
-			await this.syncService.performSync();
+		this.syncIntervalId = window.setInterval(() => {
+			void this.syncService.performSync();
 		}, intervalMs);
 	}
 
@@ -139,7 +139,7 @@ export default class SyncWorkersPlugin extends Plugin {
 
 	setSyncOnSave(enabled: boolean) {
 		this.settings.syncOnSave = enabled;
-		this.saveSettings();
+		void this.saveSettings();
 		this.updateSyncOnSaveRegistration();
 	}
 
@@ -180,9 +180,9 @@ export default class SyncWorkersPlugin extends Plugin {
 
 		this.clearScheduledSync();
 		const delayMs = reason === "startup" ? 0 : this.syncDebounceMs;
-		this.syncDebounceId = window.setTimeout(async () => {
+		this.syncDebounceId = window.setTimeout(() => {
 			this.syncDebounceId = null;
-			await this.syncService.performSync();
+			void this.syncService.performSync();
 		}, delayMs);
 	}
 

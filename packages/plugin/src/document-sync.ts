@@ -63,7 +63,7 @@ export class DocumentSync {
 				throw new Error(`Failed to fetch changes: ${response.statusText}`);
 			}
 
-			const data: ChangesResponse = await response.json();
+			const data = (await response.json()) as ChangesResponse;
 
 			// Process changes in this batch
 			for (let i = 0; i < data.results.length; i++) {
@@ -87,7 +87,7 @@ export class DocumentSync {
 						hasMore = false;
 						break;
 					}
-				} catch (_error) {
+				} catch {
 					syncStats.errors++;
 					hasMore = false;
 					break;
@@ -125,7 +125,7 @@ export class DocumentSync {
 			}
 
 			// File appears modified - get accurate mtime from disk for the push
-			const fileModTime = await getFileMtime(this.vault, file.path);
+			const fileModTime = getFileMtime(this.vault, file.path);
 
 			// Double-check with accurate disk mtime (in-memory might be slightly off)
 			if (metadata && fileModTime <= metadata.lastModified) {
@@ -188,7 +188,7 @@ export class DocumentSync {
 			throw new Error(`Failed to push changes: ${response.statusText}`);
 		}
 
-		const results: BulkDocsResponse[] = await response.json();
+		const results = (await response.json()) as BulkDocsResponse[];
 
 		// Update metadata cache with new revisions and handle conflicts
 		let current = 0;
@@ -207,12 +207,12 @@ export class DocumentSync {
 					try {
 						await this.pullDocument(result.id, expectedMtime);
 						syncStats.pushed++;
-					} catch (_error) {
+					} catch {
 						syncStats.errors++;
 					}
 				} else if (file instanceof TFile) {
 					// Normal update - update metadata with actual file mtime
-					const actualMtime = await getFileMtime(this.vault, path);
+					const actualMtime = getFileMtime(this.vault, path);
 					metadataCache.set(path, {
 						path,
 						rev: result.rev,
@@ -259,7 +259,7 @@ export class DocumentSync {
 			throw new Error(`Failed to fetch document: ${response.statusText}`);
 		}
 
-		const doc: DocumentResponse = await response.json();
+		const doc = (await response.json()) as DocumentResponse;
 
 		// Handle deleted documents - if server says it's deleted, delete locally
 		if (doc._deleted) {
@@ -281,7 +281,7 @@ export class DocumentSync {
 			}
 
 			// Get current file mtime from disk for accurate comparison
-			const currentMtime = await getFileMtime(this.vault, path);
+			const currentMtime = getFileMtime(this.vault, path);
 
 			// Determine if we should check for conflicts
 			// If expectedMtime is provided, only skip conflict check if file hasn't changed since push
@@ -350,7 +350,7 @@ export class DocumentSync {
 		}
 
 		// Get the actual file mtime after writing (critical for correct change detection)
-		const actualMtime = await getFileMtime(this.vault, path);
+		const actualMtime = getFileMtime(this.vault, path);
 
 		// Update metadata cache with actual mtime
 		metadataCache.set(path, {
@@ -379,7 +379,7 @@ export class DocumentSync {
 				});
 				return resolution !== ConflictResolution.Cancel;
 			}
-			await this.vault.delete(file);
+			await this.app.fileManager.trashFile(file);
 			metadataCache.delete(path);
 			await this.metadataManager.persistCache();
 			return true;
