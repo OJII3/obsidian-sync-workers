@@ -2,6 +2,10 @@
 
 A self-contained Obsidian sync system powered entirely by Cloudflare - a monorepo containing a Workers + D1 + R2 server and an Obsidian plugin.
 
+**日本語ドキュメント / Japanese Documentation:**
+- [サーバーセットアップガイド](./packages/server/README.md)
+- [プラグインインストールガイド](./packages/plugin/README.md)
+
 ## Overview
 
 This is an Obsidian sync server that runs entirely on Cloudflare services. No external databases like CouchDB are required, and it can be operated within Cloudflare's free tier.
