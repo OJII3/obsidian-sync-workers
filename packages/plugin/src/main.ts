@@ -67,7 +67,7 @@ export default class SyncWorkersPlugin extends Plugin {
 			id: "import-setup-uri",
 			name: "Import setup URI",
 			callback: () => {
-				this.openImportModal();
+				void this.openImportModal();
 			},
 		});
 
