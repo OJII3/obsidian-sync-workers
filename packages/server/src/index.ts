@@ -38,7 +38,7 @@ const app = new Elysia({ aot: false })
 
 		// Apply auth to all API routes
 		if (path.startsWith("/api")) {
-			const isAuthorized = await requireAuth({ request, set, env });
+			const isAuthorized = requireAuth({ request, set, env });
 			if (!isAuthorized) {
 				return authErrorResponse(set.status);
 			}
