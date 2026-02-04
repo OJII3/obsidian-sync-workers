@@ -49,6 +49,10 @@
   font-weight: 500;
 }
 
+.sync-workers-uri-input {
+  width: 100%;
+}
+
 /* Sync status bar styles */
 .sync-status {
   display: flex;

@@ -82,20 +82,20 @@ export class ConflictResolver {
 			try {
 				const content = await this.vault.read(file);
 				await this.forcePushDocument(result.id, content, result.current_rev);
-			} catch (_error) {
+			} catch {
 				new Notice(`Failed to force push ${path}.`);
 			}
 		} else if (resolution === ConflictResolution.UseRemote) {
 			// Accept remote version (or deletion)
 			try {
 				if (remoteDeleted) {
-					await this.vault.delete(file);
+					await this.app.fileManager.trashFile(file);
 					this.metadataManager.getMetadataCache().delete(path);
 					await this.metadataManager.persistCache();
 				} else {
 					await updateFileContent(this.app, this.vault, file, remoteContent);
 					// Get actual mtime after file update (critical for correct change detection)
-					const actualMtime = await getFileMtime(this.vault, path);
+					const actualMtime = getFileMtime(this.vault, path);
 					this.metadataManager.getMetadataCache().set(path, {
 						path,
 						rev: result.current_rev || "",
@@ -103,7 +103,7 @@ export class ConflictResolver {
 					});
 					await this.metadataManager.persistCache();
 				}
-			} catch (_error) {
+			} catch {
 				new Notice(`Failed to apply remote version for ${path}.`);
 			}
 		} else {
@@ -138,11 +138,11 @@ export class ConflictResolver {
 			throw new Error(`Failed to force push document: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result = (await response.json()) as { ok?: boolean; rev?: string };
 		if (result.ok && result.rev) {
 			const path = docIdToPath(docId);
 			// Get actual mtime from the file (it wasn't modified, we just pushed it)
-			const actualMtime = await getFileMtime(this.vault, path);
+			const actualMtime = getFileMtime(this.vault, path);
 			this.metadataManager.getMetadataCache().set(path, {
 				path,
 				rev: result.rev,

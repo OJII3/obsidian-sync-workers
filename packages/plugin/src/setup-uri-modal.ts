@@ -54,7 +54,7 @@ export class CopySetupURIModal extends Modal {
 			btn
 				.setButtonText("Generate and copy")
 				.setCta()
-				.onClick(async () => {
+				.onClick(() => {
 					if (!passphrase) {
 						new Notice("Please enter a passphrase.");
 						return;
@@ -67,24 +67,27 @@ export class CopySetupURIModal extends Modal {
 					btn.setDisabled(true);
 					btn.setButtonText("Generating...");
 
-					try {
-						const data: SetupData = {
-							serverUrl: this.serverUrl,
-							apiKey: this.apiKey,
-							vaultId: this.vaultId,
-							version: 1,
-						};
-						const uri = await encryptSetupData(data, passphrase);
-						await navigator.clipboard.writeText(uri);
-						new Notice("Setup URI copied to clipboard.");
-						this.close();
-					} catch (e) {
-						new Notice(
-							`Failed to generate setup URI: ${e instanceof Error ? e.message : String(e)}`,
+					const data: SetupData = {
+						serverUrl: this.serverUrl,
+						apiKey: this.apiKey,
+						vaultId: this.vaultId,
+						version: 1,
+					};
+					encryptSetupData(data, passphrase)
+						.then((uri) => navigator.clipboard.writeText(uri))
+						.then(
+							() => {
+								new Notice("Setup URI copied to clipboard.");
+								this.close();
+							},
+							(e) => {
+								new Notice(
+									`Failed to generate setup URI: ${e instanceof Error ? e.message : String(e)}`,
+								);
+								btn.setDisabled(false);
+								btn.setButtonText("Generate and copy");
+							},
 						);
-						btn.setDisabled(false);
-						btn.setButtonText("Generate and copy");
-					}
 				}),
 		);
 	}
@@ -120,7 +123,7 @@ export class ImportSetupURIModal extends Modal {
 		new Setting(contentEl).setName("Setup URI").addTextArea((text) => {
 			text.setPlaceholder("obsidian://setup-sync-workers?data=...");
 			text.inputEl.rows = 3;
-			text.inputEl.style.width = "100%";
+			text.inputEl.addClass("sync-workers-uri-input");
 			if (this.prefilledURI) {
 				text.setValue(this.prefilledURI);
 			}
@@ -142,7 +145,7 @@ export class ImportSetupURIModal extends Modal {
 				btn
 					.setButtonText("Import")
 					.setCta()
-					.onClick(async () => {
+					.onClick(() => {
 						if (!uriInput) {
 							new Notice("Please paste the setup URI.");
 							return;
@@ -159,17 +162,18 @@ export class ImportSetupURIModal extends Modal {
 						btn.setDisabled(true);
 						btn.setButtonText("Decrypting...");
 
-						try {
-							this.result = await decryptSetupURI(uriInput, passphrase);
-							new Notice(
-								`Settings imported: ${this.result.serverUrl} (vault: ${this.result.vaultId})`,
-							);
-							this.close();
-						} catch (e) {
-							new Notice(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
-							btn.setDisabled(false);
-							btn.setButtonText("Import");
-						}
+						decryptSetupURI(uriInput, passphrase).then(
+							(result) => {
+								this.result = result;
+								new Notice(`Settings imported: ${result.serverUrl} (vault: ${result.vaultId})`);
+								this.close();
+							},
+							(e) => {
+								new Notice(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+								btn.setDisabled(false);
+								btn.setButtonText("Import");
+							},
+						);
 					}),
 			)
 			.addButton((btn) =>

@@ -3,7 +3,11 @@
  *
  * Handles transient network errors by automatically retrying requests
  * with increasing delays between attempts.
+ *
+ * Uses Obsidian's requestUrl for network requests as per plugin guidelines.
  */
+
+import { type RequestUrlParam, type RequestUrlResponse, requestUrl } from "obsidian";
 
 export interface RetryOptions {
 	/** Maximum number of retry attempts (default: 4) */
@@ -17,7 +21,7 @@ export interface RetryOptions {
 	/** HTTP status codes that should trigger a retry (default: [408, 429, 500, 502, 503, 504]) */
 	retryableStatusCodes?: number[];
 	/** Callback for logging retry attempts */
-	onRetry?: (attempt: number, error: Error | Response, delayMs: number) => void;
+	onRetry?: (attempt: number, error: Error | ResponseWrapper, delayMs: number) => void;
 }
 
 const DEFAULT_OPTIONS: Required<Omit<RetryOptions, "onRetry">> = {
@@ -29,17 +33,73 @@ const DEFAULT_OPTIONS: Required<Omit<RetryOptions, "onRetry">> = {
 };
 
 /**
+ * Response wrapper that provides a fetch-like interface for RequestUrlResponse
+ */
+export class ResponseWrapper {
+	readonly status: number;
+	readonly ok: boolean;
+	readonly statusText: string;
+	readonly headers: Record<string, string>;
+	private _json: unknown;
+	private _text: string;
+	private _arrayBuffer: ArrayBuffer;
+
+	constructor(response: RequestUrlResponse) {
+		this.status = response.status;
+		this.ok = response.status >= 200 && response.status < 300;
+		this.statusText = this.getStatusText(response.status);
+		this.headers = response.headers;
+		this._json = response.json;
+		this._text = response.text;
+		this._arrayBuffer = response.arrayBuffer;
+	}
+
+	private getStatusText(status: number): string {
+		const statusTexts: Record<number, string> = {
+			200: "OK",
+			201: "Created",
+			204: "No Content",
+			400: "Bad Request",
+			401: "Unauthorized",
+			403: "Forbidden",
+			404: "Not Found",
+			409: "Conflict",
+			413: "Payload Too Large",
+			429: "Too Many Requests",
+			500: "Internal Server Error",
+			502: "Bad Gateway",
+			503: "Service Unavailable",
+			504: "Gateway Timeout",
+		};
+		return statusTexts[status] || "Unknown";
+	}
+
+	async json(): Promise<unknown> {
+		return this._json;
+	}
+
+	async text(): Promise<string> {
+		return this._text;
+	}
+
+	async arrayBuffer(): Promise<ArrayBuffer> {
+		return this._arrayBuffer;
+	}
+}
+
+/**
  * Check if an error is a network error that should be retried
  */
 function isNetworkError(error: unknown): boolean {
-	if (error instanceof TypeError) {
-		// TypeError is thrown for network failures in fetch
+	if (error instanceof Error) {
 		const message = error.message.toLowerCase();
 		return (
 			message.includes("network") ||
 			message.includes("failed to fetch") ||
 			message.includes("load failed") ||
-			message.includes("networkerror")
+			message.includes("networkerror") ||
+			message.includes("net::") ||
+			message.includes("request failed")
 		);
 	}
 	return false;
@@ -77,10 +137,12 @@ function sleep(ms: number): Promise<void> {
 /**
  * Fetch with automatic retry on network errors and specific HTTP status codes
  *
+ * Uses Obsidian's requestUrl for network requests as per plugin guidelines.
+ *
  * @param url - The URL to fetch
- * @param init - Fetch options
+ * @param init - Fetch options (compatible with standard fetch API)
  * @param options - Retry configuration options
- * @returns The fetch response
+ * @returns A Response-like wrapper for the response
  * @throws The last error if all retries are exhausted
  *
  * @example
@@ -100,17 +162,30 @@ export async function retryFetch(
 	url: string | URL,
 	init?: RequestInit,
 	options?: RetryOptions,
-): Promise<Response> {
+): Promise<ResponseWrapper> {
 	const config = { ...DEFAULT_OPTIONS, ...options };
 	let lastError: Error | undefined;
 	let attempt = 0;
 
+	// Convert URL object to string
+	const urlString = url.toString();
+
+	// Convert RequestInit to RequestUrlParam
+	const requestParams: RequestUrlParam = {
+		url: urlString,
+		method: init?.method,
+		headers: init?.headers as Record<string, string> | undefined,
+		body: init?.body as string | ArrayBuffer | undefined,
+		throw: false, // Don't throw on non-2xx status codes
+	};
+
 	while (attempt <= config.maxRetries) {
 		try {
-			const response = await fetch(url, init);
+			const response = await requestUrl(requestParams);
+			const wrappedResponse = new ResponseWrapper(response);
 
 			// Check if the response status is retryable
-			if (isRetryableStatus(response.status, config.retryableStatusCodes)) {
+			if (isRetryableStatus(wrappedResponse.status, config.retryableStatusCodes)) {
 				if (attempt < config.maxRetries) {
 					const delay = calculateDelay(
 						attempt + 1,
@@ -119,7 +194,7 @@ export async function retryFetch(
 						config.backoffMultiplier,
 					);
 
-					options?.onRetry?.(attempt + 1, response, delay);
+					options?.onRetry?.(attempt + 1, wrappedResponse, delay);
 
 					await sleep(delay);
 					attempt++;
@@ -128,7 +203,7 @@ export async function retryFetch(
 			}
 
 			// Success or non-retryable status
-			return response;
+			return wrappedResponse;
 		} catch (error) {
 			if (isNetworkError(error)) {
 				lastError = error as Error;
@@ -177,7 +252,11 @@ export async function retryFetch(
  * ```
  */
 export function createRetryFetch(defaultOptions: RetryOptions) {
-	return (url: string | URL, init?: RequestInit, options?: RetryOptions): Promise<Response> => {
+	return (
+		url: string | URL,
+		init?: RequestInit,
+		options?: RetryOptions,
+	): Promise<ResponseWrapper> => {
 		return retryFetch(url, init, { ...defaultOptions, ...options });
 	};
 }

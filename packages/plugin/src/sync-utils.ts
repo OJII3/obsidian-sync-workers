@@ -8,7 +8,8 @@ export async function updateFileContent(
 ): Promise<void> {
 	// Defensive check: ensure content is a string
 	if (content === null || content === undefined) {
-		throw new Error(`Cannot update file ${file.path}: content is ${content}`);
+		const valueType = content === null ? "null" : "undefined";
+		throw new Error(`Cannot update file ${file.path}: content is ${valueType}`);
 	}
 
 	const activeView = app.workspace.getActiveViewOfType(MarkdownView);
@@ -25,7 +26,7 @@ export async function updateFileContent(
  *
  * Note: Avoids direct adapter access to follow Obsidian plugin guidelines.
  */
-export async function getFileMtime(vault: Vault, path: string): Promise<number> {
+export function getFileMtime(vault: Vault, path: string): number {
 	const file = vault.getAbstractFileByPath(path);
 	if (file instanceof TFile) {
 		return file.stat.mtime;

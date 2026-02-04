@@ -27,46 +27,46 @@ function createMockContext(options: {
 
 describe("auth", () => {
 	describe("requireAuth", () => {
-		test("should return false when no API key is configured", async () => {
+		test("should return false when no API key is configured", () => {
 			const context = createMockContext({ apiKey: null });
-			expect(await requireAuth(context)).toBe(false);
+			expect(requireAuth(context)).toBe(false);
 			expect(context.set.status).toBe(500);
 		});
 
-		test("should return true with valid Bearer token", async () => {
+		test("should return true with valid Bearer token", () => {
 			const apiKey = "secret-key";
 			const context = createMockContext({
 				apiKey,
 				authHeader: `Bearer ${apiKey}`,
 			});
-			expect(await requireAuth(context)).toBe(true);
+			expect(requireAuth(context)).toBe(true);
 		});
 
-		test("should return false with invalid Bearer token", async () => {
+		test("should return false with invalid Bearer token", () => {
 			const context = createMockContext({
 				apiKey: "secret-key",
 				authHeader: "Bearer wrong-key",
 			});
-			expect(await requireAuth(context)).toBe(false);
+			expect(requireAuth(context)).toBe(false);
 			expect(context.set.status).toBe(401);
 		});
 
-		test("should return false with no auth header when API key is required", async () => {
+		test("should return false with no auth header when API key is required", () => {
 			const context = createMockContext({
 				apiKey: "secret-key",
 				authHeader: null,
 			});
-			expect(await requireAuth(context)).toBe(false);
+			expect(requireAuth(context)).toBe(false);
 			expect(context.set.status).toBe(401);
 		});
 
-		test("should return false when env is not provided", async () => {
+		test("should return false when env is not provided", () => {
 			const context = createMockContext({ hasEnv: false });
-			expect(await requireAuth(context)).toBe(false);
+			expect(requireAuth(context)).toBe(false);
 			expect(context.set.status).toBe(500);
 		});
 
-		test("should handle token without Bearer prefix", async () => {
+		test("should handle token without Bearer prefix", () => {
 			const apiKey = "secret-key";
 			const context = createMockContext({
 				apiKey,
@@ -76,7 +76,7 @@ describe("auth", () => {
 			// the code does authHeader.replace("Bearer ", "")
 			// If authHeader is "secret-key", it becomes "secret-key" (unchanged)
 			// which equals the API key, so it should pass
-			expect(await requireAuth(context)).toBe(true);
+			expect(requireAuth(context)).toBe(true);
 		});
 	});
 

@@ -21,7 +21,7 @@ export interface AuthContext {
  * - Plugin side also stores API key in plain text (unavoidable)
  * - Communication is protected by HTTPS
  */
-export async function requireAuth(context: AuthContext): Promise<boolean> {
+export function requireAuth(context: AuthContext): boolean {
 	const { request, set, env } = context;
 
 	const expectedKey = env?.API_KEY;
