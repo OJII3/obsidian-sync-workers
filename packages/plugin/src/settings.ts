@@ -70,10 +70,12 @@ export class SyncSettingsTab extends PluginSettingTab {
 						new Notice("No API key to copy.");
 						return;
 					}
-					navigator.clipboard.writeText(apiKey).then(
+					void navigator.clipboard.writeText(apiKey).then(
 						() => {
 							button.setButtonText("Copied!");
-							setTimeout(() => button.setButtonText("Copy"), 1500);
+							setTimeout(() => {
+								button.setButtonText("Copy");
+							}, 1500);
 						},
 						() => {
 							new Notice("Failed to copy to clipboard.");
@@ -222,7 +224,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 					.setCta()
 					.onClick(() => {
 						button.setDisabled(true);
-						this.plugin.syncService.performSync().finally(() => {
+						void this.plugin.syncService.performSync().finally(() => {
 							button.setDisabled(false);
 						});
 					}),
