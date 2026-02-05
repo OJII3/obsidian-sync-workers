@@ -18,11 +18,18 @@ export default tseslint.config(
 			},
 		},
 		rules: {
-			// Add URI to allowed acronyms
 			"obsidianmd/ui/sentence-case": [
 				"warn",
 				{
-					acronyms: ["URI"],
+					// Extra words to preserve casing (defaults already include URL, API, ID, etc.)
+					ignoreWords: ["URI", "R2", "Cloudflare", "Workers"],
+					// Skip strings that aren't natural-language UI text
+					ignoreRegex: [
+						"https?://",
+						"^obsidian://",
+						"^[✓✗]",
+						"^[a-z]+$",
+					],
 				},
 			],
 			// Relax some TypeScript rules for existing code
