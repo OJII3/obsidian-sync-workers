@@ -189,15 +189,18 @@ export class AttachmentSync {
 			// Replace wikilink image references: ![[path]] or ![[path|alt]]
 			// Reset lastIndex since regex has global flag
 			WIKILINK_IMAGE_REGEX.lastIndex = 0;
-			content = content.replace(WIKILINK_IMAGE_REGEX, (match, path: string, altText: string) => {
-				const url = pathToUrlMap.get(path);
-				if (url) {
-					modified = true;
-					const displayText = altText || path;
-					return `![${displayText}](${url})`;
-				}
-				return match;
-			});
+			content = content.replace(
+				WIKILINK_IMAGE_REGEX,
+				(match, path: string, altText: string | undefined) => {
+					const url = pathToUrlMap.get(path);
+					if (url) {
+						modified = true;
+						const displayText = altText || path;
+						return `![${displayText}](${url})`;
+					}
+					return match;
+				},
+			);
 
 			if (modified) {
 				await updateFileContent(this.app, this.vault, mdFile, content);
