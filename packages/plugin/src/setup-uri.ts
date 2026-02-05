@@ -102,7 +102,7 @@ export async function decryptSetupURI(uri: string, passphrase: string): Promise<
 	}
 
 	const decoder = new TextDecoder();
-	const data: SetupData = JSON.parse(decoder.decode(plaintext));
+	const data = JSON.parse(decoder.decode(plaintext)) as SetupData;
 
 	if (!data.serverUrl || !data.apiKey || !data.vaultId) {
 		throw new Error("Invalid setup data: missing required fields.");

@@ -274,9 +274,7 @@ function longestCommonSubsequence(a: string[], b: string[]): string[] {
 	const n = b.length;
 
 	// Create DP table - worst case 2000x2000 = 4M cells = ~16MB
-	const dp: number[][] = Array(m + 1)
-		.fill(0)
-		.map(() => Array(n + 1).fill(0));
+	const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
 
 	// Build LCS table
 	for (let i = 1; i <= m; i++) {
