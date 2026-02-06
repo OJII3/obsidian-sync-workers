@@ -17,10 +17,10 @@ export class CopySetupURIModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Copy setup URI" });
+		contentEl.createEl("h2", { text: "Copy setup URL" });
 
 		contentEl.createEl("p", {
-			text: "Generate an encrypted URI to set up another device. Share the URI and passphrase separately.",
+			text: "Generate an encrypted URL to set up another device. Share the URL and passphrase separately.",
 		});
 
 		if (!this.serverUrl || !this.apiKey) {
@@ -77,12 +77,12 @@ export class CopySetupURIModal extends Modal {
 						.then((uri) => navigator.clipboard.writeText(uri))
 						.then(
 							() => {
-								new Notice("Setup URI copied to clipboard.");
+								new Notice("Setup URL copied to clipboard.");
 								this.close();
 							},
 							(e) => {
 								new Notice(
-									`Failed to generate setup URI: ${e instanceof Error ? e.message : String(e)}`,
+									`Failed to generate setup URL: ${e instanceof Error ? e.message : String(e)}`,
 								);
 								btn.setDisabled(false);
 								btn.setButtonText("Generate and copy");
@@ -111,17 +111,17 @@ export class ImportSetupURIModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Import setup URI" });
+		contentEl.createEl("h2", { text: "Import setup URL" });
 
 		contentEl.createEl("p", {
-			text: "Paste a setup URI from another device and enter the passphrase to import settings.",
+			text: "Paste a setup URL from another device and enter the passphrase to import settings.",
 		});
 
 		let uriInput = this.prefilledURI;
 		let passphrase = "";
 
-		new Setting(contentEl).setName("Setup URI").addTextArea((text) => {
-			text.setPlaceholder("obsidian://setup-sync-workers?data=...");
+		new Setting(contentEl).setName("Setup URL").addTextArea((text) => {
+			text.setPlaceholder("Paste the setup URL");
 			text.inputEl.rows = 3;
 			text.inputEl.addClass("sync-workers-uri-input");
 			if (this.prefilledURI) {
@@ -147,11 +147,11 @@ export class ImportSetupURIModal extends Modal {
 					.setCta()
 					.onClick(() => {
 						if (!uriInput) {
-							new Notice("Please paste the setup URI.");
+							new Notice("Please paste the setup URL.");
 							return;
 						}
 						if (!isSetupURI(uriInput)) {
-							new Notice("Invalid setup URI format.");
+							new Notice("Invalid setup URL format.");
 							return;
 						}
 						if (!passphrase) {

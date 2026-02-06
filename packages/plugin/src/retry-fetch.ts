@@ -74,16 +74,16 @@ export class ResponseWrapper {
 		return statusTexts[status] || "Unknown";
 	}
 
-	async json(): Promise<unknown> {
-		return this._json;
+	json(): Promise<unknown> {
+		return Promise.resolve(this._json);
 	}
 
-	async text(): Promise<string> {
-		return this._text;
+	text(): Promise<string> {
+		return Promise.resolve(this._text);
 	}
 
-	async arrayBuffer(): Promise<ArrayBuffer> {
-		return this._arrayBuffer;
+	arrayBuffer(): Promise<ArrayBuffer> {
+		return Promise.resolve(this._arrayBuffer);
 	}
 }
 
