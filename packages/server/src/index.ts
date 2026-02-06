@@ -25,7 +25,7 @@ const app = new Elysia({ aot: false })
 		};
 	})
 	// Authentication middleware - applies to all /api/* routes
-	.onBeforeHandle(async ({ request, set, path }) => {
+	.onBeforeHandle(({ request, set, path }) => {
 		// Skip auth for health check endpoint and OPTIONS requests
 		if (path === "/" || request.method === "OPTIONS") {
 			return;

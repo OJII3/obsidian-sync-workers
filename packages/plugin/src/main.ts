@@ -52,7 +52,7 @@ export default class SyncWorkersPlugin extends Plugin {
 
 		this.addCommand({
 			id: "copy-setup-uri",
-			name: "Copy setup URI",
+			name: "Copy setup URL",
 			callback: () => {
 				new CopySetupURIModal(
 					this.app,
@@ -65,7 +65,7 @@ export default class SyncWorkersPlugin extends Plugin {
 
 		this.addCommand({
 			id: "import-setup-uri",
-			name: "Import setup URI",
+			name: "Import setup URL",
 			callback: () => {
 				void this.openImportModal();
 			},

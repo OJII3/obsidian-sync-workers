@@ -18,10 +18,10 @@ export class SyncSettingsTab extends PluginSettingTab {
 		// Server URL
 		const serverUrlSetting = new Setting(containerEl)
 			.setName("Server URL")
-			.setDesc("The URL of your Cloudflare Workers sync server")
+			.setDesc("The URL of your sync server")
 			.addText((text) =>
 				text
-					.setPlaceholder("http://localhost:8787")
+					.setPlaceholder("Enter your server URL")
 					.setValue(this.plugin.settings.serverUrl)
 					.onChange((value) => {
 						const trimmedValue = value.trim();
@@ -29,10 +29,10 @@ export class SyncSettingsTab extends PluginSettingTab {
 						// Validate URL format
 						if (trimmedValue && !trimmedValue.match(/^https?:\/\/.+/)) {
 							text.inputEl.addClass("is-invalid");
-							serverUrlSetting.setDesc("Invalid URL format. Must start with http:// or https://");
+							serverUrlSetting.setDesc("Please enter a valid URL");
 						} else {
 							text.inputEl.removeClass("is-invalid");
-							serverUrlSetting.setDesc("The URL of your Cloudflare Workers sync server");
+							serverUrlSetting.setDesc("The URL of your sync server");
 							this.plugin.settings.serverUrl = trimmedValue;
 							void this.plugin.saveSettings();
 						}
@@ -90,7 +90,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 			.setDesc("Unique identifier for this vault")
 			.addText((text) =>
 				text
-					.setPlaceholder("default")
+					.setPlaceholder("Default")
 					.setValue(this.plugin.settings.vaultId)
 					.onChange((value) => {
 						this.plugin.settings.vaultId = value.trim() || "default";
@@ -190,13 +190,13 @@ export class SyncSettingsTab extends PluginSettingTab {
 						this.plugin.syncService.testConnection().then(
 							(success) => {
 								if (success) {
-									button.setButtonText("✓ Connected");
+									button.setButtonText("✓ connected");
 									setTimeout(() => {
 										button.setButtonText("Test");
 										button.setDisabled(false);
 									}, 2000);
 								} else {
-									button.setButtonText("✗ Failed");
+									button.setButtonText("✗ failed");
 									setTimeout(() => {
 										button.setButtonText("Test");
 										button.setDisabled(false);
@@ -204,7 +204,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 								}
 							},
 							() => {
-								button.setButtonText("✗ Failed");
+								button.setButtonText("✗ failed");
 								setTimeout(() => {
 									button.setButtonText("Test");
 									button.setDisabled(false);
@@ -230,12 +230,12 @@ export class SyncSettingsTab extends PluginSettingTab {
 					}),
 			);
 
-		// Setup URI section
-		new Setting(containerEl).setName("Setup URI").setHeading();
+		// Setup URL section
+		new Setting(containerEl).setName("Setup URL").setHeading();
 
 		new Setting(containerEl)
-			.setName("Copy setup URI")
-			.setDesc("Generate an encrypted URI to set up another device")
+			.setName("Copy setup URL")
+			.setDesc("Generate an encrypted URL to set up another device")
 			.addButton((button) =>
 				button.setButtonText("Copy").onClick(() => {
 					new CopySetupURIModal(
@@ -248,8 +248,8 @@ export class SyncSettingsTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Import setup URI")
-			.setDesc("Import settings from another device using a setup URI")
+			.setName("Import setup URL")
+			.setDesc("Import settings from another device using a setup URL")
 			.addButton((button) =>
 				button.setButtonText("Import").onClick(() => {
 					void this.plugin.openImportModal();
