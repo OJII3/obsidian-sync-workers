@@ -138,7 +138,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 		// Sync attachments toggle
 		new Setting(containerEl)
 			.setName("Sync attachments")
-			.setDesc("Sync binary files like images, PDFs, and other attachments")
+			.setDesc("Sync binary files like images, PDF files, and other attachments")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.syncAttachments).onChange((value) => {
 					this.plugin.settings.syncAttachments = value;
